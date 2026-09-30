@@ -132,7 +132,9 @@ def api_cartera():
 
 @app.get("/api/buscar")
 def api_buscar():
-    return jsonify(resultados=buscar.buscar(request.args.get("q", "")))
+    n = len(buscar.FALLOS)
+    res = buscar.buscar(request.args.get("q", ""))
+    return jsonify(resultados=res, sinConexion=(not res and bool(buscar.hubo_fallos_desde(n))))
 
 
 GUARDAR = {"productos": almacen.guarda_producto, "movimientos": almacen.guarda_movimiento,

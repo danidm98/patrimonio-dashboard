@@ -278,8 +278,15 @@ class Resolutor:
         if existente:
             ref = existente["id"]
         elif identificador:
+            n_fallos = len(buscar.FALLOS)
             res = buscar.buscar(identificador)
-            if res:
+            if not res and buscar.hubo_fallos_desde(n_fallos):
+                self.plan.error(fila, f"No he podido consultar «{identificador}» en internet ahora mismo "
+                                      "(la conexión ha fallado o Yahoo/Morningstar no han respondido). "
+                                      "Comprueba tu conexión y vuelve a pulsar «Previsualizar»: suele bastar "
+                                      "con intentarlo otra vez.")
+                ref = None
+            elif res:
                 r = res[0]
                 fi = r.get("ficha") or {}
                 datos = {"nombre": nombre or r.get("nombre") or r["codigo"], "tipo": r["tipo"],

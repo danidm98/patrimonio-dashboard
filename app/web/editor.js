@@ -314,6 +314,11 @@
       res.innerHTML = '<p class="cargando">Buscando y comprobando precios…</p>';
       try {
         const j = await api("GET", "api/buscar?q=" + encodeURIComponent(q));
+        if (!j.resultados.length && j.sinConexion) {
+          res.innerHTML = `<p class="neg">No he podido conectar con internet (o Yahoo/Morningstar no han
+            respondido). Comprueba tu conexión e inténtalo otra vez.</p>`;
+          return;
+        }
         if (!j.resultados.length) {
           res.innerHTML = `<p class="neg">No encuentro «${esc(q)}» con precio en internet. Prueba con el ISIN
             (viene en la ficha del producto en tu banco) o elige «Valor anotado a mano».</p>`;

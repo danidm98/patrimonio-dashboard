@@ -9,6 +9,8 @@ candidato tiene precio antes de proponerlo.
 import datetime as dt
 import json
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -39,10 +41,37 @@ MS_SERIE = "https://lt.morningstar.com/api/rest.svc/timeseries_price/t92wz0sj7c?
 MS_BUSCA = "https://lt.morningstar.com/api/rest.svc/klr5zyak8x/security/screener?"
 
 
-def _get(url, timeout=12):
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+# Fallos de conexión (no "no existe"): el importador y el buscador los usan para no
+# decir "no encuentro" cuando en realidad no ha llegado a internet.
+FALLOS = []
+
+
+def _de_red(e):
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code == 429 or e.code >= 500
+    return isinstance(e, (urllib.error.URLError, TimeoutError, OSError))
+
+
+def _get(url, timeout=15):
+    for intento in (1, 2, 3):
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode("utf-8", "replace"))
+        except Exception as e:
+            if not _de_red(e):
+                raise
+            if intento == 3:
+                motivo = getattr(e, "reason", None) or getattr(e, "code", None) or e
+                FALLOS.append(f"{url.split('/')[2]}: {motivo}")
+                print(f"  (sin respuesta de {url.split('/')[2]}: {motivo})")
+                raise
+            time.sleep(1.5 * intento)
+
+
+def hubo_fallos_desde(n):
+    """Motivo del último fallo de conexión desde que había n registrados, o None."""
+    return FALLOS[-1] if len(FALLOS) > n else None
 
 
 def _intenta(fn, *args):
