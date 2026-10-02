@@ -8,6 +8,12 @@
   const $ = s => document.querySelector(s);
   const raiz = document.documentElement;
 
+  // Escapa texto del usuario (nombres de productos, titulares, categorías…) antes
+  // de meterlo en innerHTML, para que nunca se interprete como HTML. Igual que en
+  // editor.js. Úsalo SIEMPRE que interpoles un dato de texto de DATOS.
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
   const recuerda = {
     lee(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     guarda(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* da igual */ } },
@@ -18,16 +24,75 @@
   if (qs.get("tab")) recuerda.guarda("patrimonio.tab", qs.get("tab"));
   if (qs.get("tema")) recuerda.guarda("patrimonio.tema", qs.get("tema"));
 
-  // El tema (claro u oscuro) se aplica siempre, también con la cartera vacía.
-  const temaGuardado = recuerda.lee("patrimonio.tema");
-  if (temaGuardado) raiz.dataset.tema = temaGuardado;
-  const cambiaTema = () => {
-    raiz.dataset.tema = raiz.dataset.tema === "claro" ? "oscuro" : "claro";
-    recuerda.guarda("patrimonio.tema", raiz.dataset.tema);
-  };
+  // ---- Preferencias de pantalla (zona «Ajustes»). Se guardan en el navegador. ----
+  const pref = (k, def) => recuerda.lee("patrimonio." + k) || def;
+  const sistemaOscuro = () => { try { return matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { return true; } };
+  function aplicaPrefs() {
+    const t = pref("tema", "oscuro");
+    raiz.dataset.tema = t === "auto" ? (sistemaOscuro() ? "oscuro" : "claro") : t;
+    const tx = pref("texto", "normal");
+    document.body.classList.toggle("textoGrande", tx === "grande");
+    document.body.classList.toggle("textoMuyGrande", tx === "muyGrande");
+    document.body.classList.toggle("video", pref("video", "0") === "1");
+    document.body.classList.toggle("vistaAmplia", pref("amplia", "0") === "1");
+    window.OCULTAR_IMPORTES = pref("ocultar", "0") === "1";
+  }
+  aplicaPrefs();
+
+  let _repinta = null;   // se asigna a pintar() cuando hay datos; refresca al cambiar un ajuste
+
+  // Construye y cablea la pestaña ⚙️ Ajustes (preferencias de pantalla).
+  function pintaAjustes() {
+    const cont = $("#ajustesCont");
+    if (!cont) return;
+    const fila = (titulo, desc, nombre, opciones) =>
+      `<div class="ajusteFila"><div class="ajusteTxt"><b>${titulo}</b><small>${esc(desc)}</small></div>
+        <div class="segm ajusteSeg" data-pref="${nombre}">${opciones.map(o =>
+          `<button data-val="${o.v}" aria-pressed="${String(o.v === pref(nombre, opciones[0].v))}">${o.t}</button>`).join("")}</div></div>`;
+    cont.innerHTML =
+      fila("Tema", "Claro, oscuro o según tu sistema.", "tema",
+           [{ v: "oscuro", t: "Oscuro" }, { v: "claro", t: "Claro" }, { v: "auto", t: "Automático" }]) +
+      fila("Tamaño del texto", "Agranda todo para leer mejor.", "texto",
+           [{ v: "normal", t: "Normal" }, { v: "grande", t: "Grande" }, { v: "muyGrande", t: "Muy grande" }]) +
+      fila("Vista amplia", "Filas y botones más grandes y espaciados, más fáciles de tocar.", "amplia",
+           [{ v: "0", t: "No" }, { v: "1", t: "Sí" }]) +
+      fila("Ocultar importes", "Muestra «•••» en vez de las cantidades, para enseñar la pantalla sin revelar tu dinero.", "ocultar",
+           [{ v: "0", t: "No" }, { v: "1", t: "Sí" }]) +
+      fila("Modo vídeo", "Cifras grandes y sin controles, para presentar o grabar.", "video",
+           [{ v: "0", t: "No" }, { v: "1", t: "Sí" }]) +
+      fila("Pantalla de inicio", "Qué se abre al abrir la app.", "inicio",
+           [{ v: "ultima", t: "La última que usaste" }, { v: "panel", t: "Siempre el Panel" }]);
+    cont.querySelectorAll(".ajusteSeg").forEach(bar => {
+      const nombre = bar.dataset.pref;
+      bar.querySelectorAll("button").forEach(b => {
+        b.onclick = () => {
+          recuerda.guarda("patrimonio." + nombre, b.dataset.val);
+          bar.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+          aplicaPrefs();
+          if (_repinta) _repinta();
+        };
+      });
+    });
+  }
+
+  // Card de bienvenida: se muestra la primera vez (y se puede reabrir desde Ayuda).
+  function muestraBienvenida(forzar) {
+    if (window.ESTATICO) return;   // no en la web exportada que se comparte
+    const dlg = $("#bienvenida");
+    if (!dlg) return;
+    if (!forzar && recuerda.lee("patrimonio.bienvenida") === "vista") return;
+    const marca = () => recuerda.guarda("patrimonio.bienvenida", "vista");
+    try { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", ""); }
+    catch (e) { try { dlg.setAttribute("open", ""); } catch (e2) { return; } }
+    const b = $("#bvCerrar");
+    if (b) b.onclick = () => { marca(); try { dlg.close(); } catch (e) { dlg.removeAttribute("open"); } };
+    dlg.addEventListener("close", marca, { once: true });
+  }
+  { const bv = $("#btnVerBienvenida"); if (bv) bv.onclick = () => muestraBienvenida(true); }
 
   if (!D) {
-    $("#btnTema").onclick = cambiaTema;
+    pintaAjustes();
+    muestraBienvenida(false);
     // Cartera vacía: solo se enseña «Mis datos», para empezar a meter productos.
     document.body.classList.add("sinDatos");
     document.querySelectorAll("#tabs button").forEach(b =>
@@ -40,17 +105,22 @@
         document.querySelectorAll(".panel").forEach(p => { p.hidden = p.id !== "tab-" + b.dataset.tab; });
       };
     });
+    montaSelectorCarteras();
     return;
   }
 
   const estado = {
-    tab: "patrimonio",
+    tab: "panel",
+    pv: "patrimonio",
+    titular: "todos",
     rango: "todo",
     vista: "apilado",
     dist: "clase",
     fondo: null,
     serieDetalle: "posicion",
     mes: (D.resumenMensual || []).length - 1,
+    periodo: "mes",
+    anio: null,
     anual: "mia",
     tablaFiltro: "todos",
     ordenTabla: { col: "fecha", desc: true },
@@ -108,7 +178,7 @@
     });
     const ley = (c, t) => `<span class="leyItem"><i style="background:${G.css(c)}"></i>${t}</span>`;
     $("#compNota").innerHTML = `<span class="leyComp">${ley("--s1", "Tu cartera")}${ley("--s2", "Con el " + r.nombre)}${ley("--tinta3", "Tu dinero puesto")}</span>
-      ${r.detalle} Solo cuenta los productos con compras anotadas (no las cuentas ni lo
+      ${esc(r.detalle)} Solo cuenta los productos con compras anotadas (no las cuentas ni lo
       que valoras a mano sin movimientos), desde el ${G.fmtFecha(C.desde)}. Sin impuestos ni comisiones de compra.
       ${r.aviso ? "<br>" + r.aviso : ""}`;
   }
@@ -136,8 +206,17 @@
   }
 
   const TODOS = () => D.productos.concat(D.otrosActivos || [], D.pasivos || []);
-  const visibles = () => TODOS().filter(p => !estado.ocultos.has(p.id));
-  const filtrando = () => estado.ocultos.size > 0;
+  const filtroTit = () => estado.titular && estado.titular !== "todos";
+  const visibles = () => TODOS().filter(p =>
+    !estado.ocultos.has(p.id) && (!filtroTit() || (p.titular || "Sin asignar") === estado.titular));
+  const filtrando = () => estado.ocultos.size > 0 || filtroTit();
+
+  // Iconito ⓘ con explicación al pasar el ratón (tooltip nativo: nunca se recorta,
+  // ni dentro de los cuadros con scroll). aria-label para lectores de pantalla.
+  const info = t => {
+    const a = String(t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return ` <span class="info" tabindex="0" role="note" title="${a}" aria-label="${a}">i</span>`;
+  };
   const buscaProd = id => TODOS().find(p => p.id === id);
 
   /* ---------------------------------------------- precio en vivo */
@@ -292,7 +371,12 @@
       const b = document.createElement("button");
       b.textContent = o.et;
       b.setAttribute("aria-pressed", String(o.id === activo));
-      b.onclick = () => alPulsar(o.id);
+      b.onclick = () => {
+        // Marca el botón pulsado al momento, aunque el callback solo redibuje
+        // el gráfico y no vuelva a pintar esta barra de segmentos.
+        cont.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        alPulsar(o.id);
+      };
       cont.appendChild(b);
     });
   }
@@ -312,7 +396,7 @@
       b.style.setProperty("--c", color(p));
       b.setAttribute("aria-pressed", String(on));
       b.title = on ? "Quitar del gráfico y de las métricas" : "Volver a incluirlo";
-      b.innerHTML = `<i></i>${p.corto || p.nombre}<span class="im">${G.fmtEurCorto(valorDe(p))}</span>`;
+      b.innerHTML = `<i></i>${esc(p.corto || p.nombre)}<span class="im">${G.fmtEurCorto(valorDe(p))}</span>`;
       b.onclick = () => {
         if (on) { if (visibles().length <= 1) return; estado.ocultos.add(p.id); }
         else estado.ocultos.delete(p.id);
@@ -328,7 +412,7 @@
     const esLargo = cortos.length > 0 && cortos.length === estado.ocultos.size &&
       cortos.every(id => estado.ocultos.has(id));
     [
-      { id: "todo", et: "Ver todo", act: !filtrando(), fn: () => estado.ocultos.clear() },
+      { id: "todo", et: "Ver todo", act: !filtrando(), fn: () => { estado.ocultos.clear(); estado.titular = "todos"; } },
       { id: "largo", et: "Solo largo plazo", act: esLargo, fn: () => { estado.ocultos = new Set(cortos); } },
     ].forEach(pr => {
       if (pr.id === "largo" && !cortos.length) return;
@@ -375,7 +459,7 @@
     }
     $("#heroSub").innerHTML = partes.join('<span style="color:var(--tinta3)">·</span>');
     const reset = $("#btnReset");
-    if (reset) reset.onclick = () => { estado.ocultos.clear(); pintaPatrimonio(); };
+    if (reset) reset.onclick = () => { estado.ocultos.clear(); estado.titular = "todos"; pintaPatrimonio(); };
 
     if (filtro) { $("#progEnv").hidden = true; return; }
 
@@ -400,7 +484,7 @@
         n: m.rentabilidad != null ? G.fmtPctSigno(m.rentabilidad) + " sobre el coste" : "sin coste registrado",
         cl: m.plusvalia >= 0 ? "pos" : "neg"
       },
-      { e: "TIR anualizada", v: G.fmtPctSigno(m.tir), n: "rentabilidad real del dinero", cl: m.tir >= 0 ? "pos" : "neg" },
+      { e: "TIR anualizada" + info("La rentabilidad real de tu dinero: tiene en cuenta cuándo metiste y sacaste cada euro. En % anual."), v: G.fmtPctSigno(m.tir), n: "rentabilidad real del dinero", cl: m.tir >= 0 ? "pos" : "neg" },
       { e: "Ritmo mensual", v: G.fmtEur(m.ritmo, 0), n: "media de los últimos 12 meses" },
       { e: "Racha", v: m.racha + (m.racha === 1 ? " mes" : " meses"), n: "aportando sin fallar" },
       { e: "Peor caída", v: G.fmtPctSigno(m.caida), n: m.caidaFecha ? "del patrimonio, el " + G.fmtFecha(m.caidaFecha) : "", cl: "neg" },
@@ -410,6 +494,277 @@
        <div class="v ${k.cl || ""}">${k.v}</div><div class="n">${k.n}</div></div>`).join("");
     $("#kpisNota").textContent = filtrando()
       ? `Métricas de los ${visibles().length} componentes activos, no del patrimonio completo.` : "";
+  }
+
+  /* Patrimonio del hogar: bruto/neto, disponible, apartados, colchón, dinero libre
+     y desglose por titular. Cifras del snapshot de hoy (D.total), no filtradas. */
+  function pintaHogar() {
+    const t = D.total, card = $("#tarjetaHogar");
+    if (!t || t.patrimonioBruto == null) { card.hidden = true; return; }
+    card.hidden = false;
+
+    const tiles = [
+      { e: "Patrimonio bruto", v: G.fmtEur(t.patrimonioBruto, 0), n: "todo lo que tienes" },
+      { e: "Deudas", v: G.fmtEur(t.deudas, 0), n: "lo que debes", cl: t.deudas ? "neg" : "" },
+      { e: "Patrimonio neto" + info("Todo lo que tienes menos lo que debes (patrimonio bruto − deudas)."), v: G.fmtEur(t.patrimonioNeto, 0), n: "bruto − deudas" },
+      { e: "Disponible" + info("Dinero que puedes usar ya, sin penalización (cuentas, efectivo). Lo marcas en la ficha de cada producto."), v: G.fmtEur(t.disponible, 0), n: "liquidez inmediata" },
+      { e: "No disponible", v: G.fmtEur(t.noDisponible, 0), n: "inversiones, inmuebles…" },
+      { e: "Apartados", v: G.fmtEur(t.apartadosTotal, 0), n: "dinero reservado" },
+      { e: "Colchón", v: G.fmtEur(t.colchon, 0), n: "liquidez que quieres mantener" },
+      {
+        e: "Dinero libre para invertir" + info("Lo que te queda de verdad para invertir: disponible − apartados − colchón."), v: G.fmtEur(t.dineroLibre, 0),
+        n: "disponible − apartados − colchón", cl: t.dineroLibre < 0 ? "neg" : "pos"
+      },
+    ];
+    $("#hogarGrid").innerHTML = tiles.map(k =>
+      `<div class="kpi"><div class="e">${k.e}</div>
+       <div class="v ${k.cl || ""}">${k.v}</div><div class="n">${k.n}</div></div>`).join("");
+
+    // Cómo ha cambiado: ahora vs. hace 1 y 12 meses (cabecera tipo Excel).
+    const vr = t.variacion, cv = $("#hogarVariacion");
+    if (!vr || !vr.neto) { cv.innerHTML = ""; } else {
+      const val = x => x == null ? "—" : G.fmtEur(x, 0);
+      const delta = (x, invert) => {
+        if (x == null) return "—";
+        const bueno = invert ? x <= 0 : x >= 0;
+        return `<span style="color:${bueno ? "var(--bien)" : "var(--mal)"}">${x >= 0 ? "+" : ""}${G.fmtEur(x, 0)}</span>`;
+      };
+      const d2 = ' style="text-align:right"';
+      const fila = (et, r, invert) => !r ? "" :
+        `<tr><td>${et}</td><td${d2}>${val(r.ahora)}</td><td${d2}>${val(r.hace1Mes)}</td>
+         <td${d2}>${delta(r.varMes, invert)}</td><td${d2}>${val(r.hace12Meses)}</td>
+         <td${d2}>${delta(r.varAno, invert)}</td></tr>`;
+      cv.innerHTML =
+        `<h3 style="font-size:13px;margin:0 0 6px;color:var(--tinta2)">Cómo ha cambiado${info("Compara tu patrimonio de ahora con el de hace un mes y hace un año, según los saldos que has anotado. «—» significa que todavía no hay datos de esa fecha.")}</h3>
+         <table class="leyenda">
+           <thead><tr><th></th><th${d2}>Ahora</th><th${d2}>Hace 1 mes</th><th${d2}>Δ mes</th><th${d2}>Hace 12 meses</th><th${d2}>Δ año</th></tr></thead>
+           <tbody>${fila("Patrimonio neto", vr.neto)}${fila("Patrimonio bruto", vr.bruto)}${fila("Deudas", vr.deuda, true)}</tbody>
+         </table>`;
+    }
+
+    const pt = t.porTitular || [];
+    const hayTit = pt.length > 1 || (pt.length === 1 && pt[0].nombre !== "Sin asignar");
+    const cont = $("#hogarTitular");
+    cont.innerHTML = !hayTit ? "" :
+      `<h3 style="font-size:13px;margin:0 0 6px;color:var(--tinta2)">Patrimonio neto por titular</h3>
+       <table class="leyenda">` + pt.map(x =>
+        `<tr><td><i style="background:${(x.color && x.color[0]) || "#888"}"></i>${esc(x.nombre)}</td>
+         <td>${G.fmtEur(x.valor, 0)}</td><td>${G.fmtPct(x.peso, 0)}</td></tr>`).join("") +
+      `</table>`;
+  }
+
+  /* Deudas: capital pendiente, cuota, intereses estimados, ratio y detalle. */
+  function pintaDeudas() {
+    const card = $("#tarjetaDeudas"), ds = D.deudas || [], t = D.total;
+    if (!ds.length) { card.hidden = true; return; }
+    card.hidden = false;
+
+    const tiles = [
+      { e: "Capital pendiente", v: G.fmtEur(t.deudas, 0), n: `${ds.length} deuda${ds.length > 1 ? "s" : ""}` },
+      { e: "Cuota mensual", v: G.fmtEur(t.cuotaMensualDeudas, 0), n: "suma de cuotas" },
+      { e: "Intereses/año (est.)" + info("Lo que pagarías de intereses en un año: capital pendiente × TAE. Es una estimación."), v: G.fmtEur(t.interesAnualDeudas, 0), n: "capital × TAE" },
+      {
+        e: "Deudas / activos" + info("Cuánto debes frente a lo que tienes. Cuanto más bajo, menos apalancado estás."),
+        v: t.ratioDeudaActivos != null ? G.fmtPct(t.ratioDeudaActivos, 0) : "—",
+        n: "apalancamiento", cl: t.ratioDeudaActivos > 0.5 ? "neg" : ""
+      },
+    ];
+    $("#deudasKpis").innerHTML = tiles.map(k =>
+      `<div class="kpi"><div class="e">${k.e}</div>
+       <div class="v ${k.cl || ""}">${k.v}</div><div class="n">${k.n}</div></div>`).join("");
+
+    const cel = (v, r) => `<td${r ? ' style="text-align:right"' : ""}>${v}</td>`;
+    const filas = ds.map(x => `<tr>
+      <td><i class="pt" style="background:${(x.color && x.color[0]) || "#888"}"></i>${esc(x.nombre)}${x.acreedor ? ` <small>${esc(x.acreedor)}</small>` : ""}</td>
+      ${cel(esc(x.titular || ""))}
+      ${cel(G.fmtEur(x.capitalPendiente, 0), true)}
+      ${cel(x.tae != null ? G.fmtPct(x.tae, 2) : "—", true)}
+      ${cel(x.cuota != null ? G.fmtEur(x.cuota, 0) : "—", true)}
+      ${cel(x.interesAnual != null ? G.fmtEur(x.interesAnual, 0) : "—", true)}
+      ${cel(x.fechaVencimiento ? G.fmtFecha(x.fechaVencimiento) : "")}</tr>`).join("");
+    $("#deudasTabla").innerHTML =
+      `<thead><tr><th>Deuda</th><th>Titular</th><th style="text-align:right">Capital pend.</th>
+        <th style="text-align:right">TAE</th><th style="text-align:right">Cuota</th>
+        <th style="text-align:right">Interés/año</th><th>Vence</th></tr></thead><tbody>${filas}</tbody>`;
+  }
+
+  /* Ingresos, gastos y ahorro: mes en curso vs. media de 12 meses + tabla mensual. */
+  function pintaFlujos() {
+    const card = $("#tarjetaFlujos"), f = D.flujos;
+    if (!f) { card.hidden = true; return; }
+    card.hidden = false;
+    const em = f.esteMes, m12 = f.media12;
+    $("#flujosSub").textContent = "Últimos 12 meses hasta " + G.fmtFechaCorta(D.fechaExtracto);
+    const pct = v => v != null ? G.fmtPct(v, 0) : "—";
+    const tiles = [
+      { e: "Ingresos (mes)", v: G.fmtEur(em.ingresos, 0), n: "media 12m " + G.fmtEur(m12.ingresos, 0) },
+      { e: "Gastos (mes)", v: G.fmtEur(em.gastos, 0), n: "media 12m " + G.fmtEur(m12.gastos, 0) },
+      {
+        e: "Ahorro (mes)", v: G.fmtEur(em.ahorro, 0), n: "media 12m " + G.fmtEur(m12.ahorro, 0),
+        cl: em.ahorro >= 0 ? "pos" : "neg"
+      },
+      {
+        e: "Tasa de ahorro" + info("Qué parte de tus ingresos ahorras: (ingresos − gastos) / ingresos."), v: pct(em.tasaAhorro), n: "media 12m " + pct(m12.tasaAhorro),
+        cl: (em.tasaAhorro || 0) >= 0 ? "pos" : "neg"
+      },
+    ];
+    $("#flujosKpis").innerHTML = tiles.map(k =>
+      `<div class="kpi"><div class="e">${k.e}</div>
+       <div class="v ${k.cl || ""}">${k.v}</div><div class="n">${k.n}</div></div>`).join("");
+
+    const filas = f.meses.map((m, i) => `<tr><td>${m}</td>
+      <td style="text-align:right" class="pos">${G.fmtEur(f.ingresos[i], 0)}</td>
+      <td style="text-align:right" class="neg">${G.fmtEur(f.gastos[i], 0)}</td>
+      <td style="text-align:right">${G.fmtEur(f.ahorro[i], 0)}</td>
+      <td style="text-align:right">${f.tasaAhorro[i] != null ? G.fmtPct(f.tasaAhorro[i], 0) : "—"}</td></tr>`).join("");
+    $("#flujosTabla").innerHTML =
+      `<thead><tr><th>Mes</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Gastos</th>
+        <th style="text-align:right">Ahorro</th><th style="text-align:right">Tasa</th></tr></thead><tbody>${filas}</tbody>`;
+
+    // Presupuesto por categoría (mes en curso frente al presupuesto, si lo hay).
+    const cats = (f.porCategoria || []).filter(c => c.mes || c.anio || c.presupuesto);
+    const cont = $("#flujosCatEnv");
+    if (cont) {
+      const hayPres = cats.some(c => c.presupuesto != null);
+      const dif = c => {
+        if (c.presupuesto == null) return "—";
+        const d = c.diferencia;
+        const cl = d > 0 ? "neg" : "pos";   // gastar por encima del presupuesto es malo
+        return `<span class="${cl}">${G.fmtEurSigno(-d)}</span>`;   // +: te sobra; −: te pasas
+      };
+      const fil = cats.map(c => `<tr>
+        <td>${esc(c.categoria)}</td>
+        <td><span class="${c.tipo === "ingreso" ? "pos" : "neg"}">${c.tipo === "ingreso" ? "Ingreso" : "Gasto"}</span></td>
+        <td style="text-align:right">${G.fmtEur(c.mes, 0)}</td>
+        <td style="text-align:right">${G.fmtEur(c.anio, 0)}</td>
+        <td style="text-align:right">${c.presupuesto != null ? G.fmtEur(c.presupuesto, 0) : "—"}</td>
+        <td style="text-align:right">${dif(c)}</td>
+        <td style="text-align:right">${G.fmtEur(c.media, 0)}</td></tr>`).join("");
+      cont.innerHTML = cats.length
+        ? `<h3 style="font-size:13px;margin:0 0 8px;color:var(--tinta2)">Por categoría${hayPres ? " · presupuesto del mes" : ""}</h3>
+           <div class="tablaEnv"><table class="dt"><thead><tr><th>Categoría</th><th>Tipo</th>
+             <th style="text-align:right">Este mes</th><th style="text-align:right">Año</th>
+             <th style="text-align:right">Presupuesto</th><th style="text-align:right">Margen</th>
+             <th style="text-align:right">Media 12m</th></tr></thead><tbody>${fil}</tbody></table></div>
+           ${hayPres ? `<p class="subt" style="margin-top:8px">«Margen» = presupuesto − gasto del mes: en verde te sobra, en rojo te has pasado. Presupuesto mensual total de gastos: ${G.fmtEur(f.presupuestoMensual || 0, 0)}.</p>` : '<p class="subt" style="margin-top:8px">Pon un presupuesto por categoría en «Mis datos → Configuración» para ver si te pasas.</p>'}`
+        : "";
+    }
+  }
+
+  /* Selector para ver el Panel de un solo titular (o de todos). */
+  function pintaFiltroTitular() {
+    const cont = $("#filtroTitular");
+    if (!cont) return;
+    const tits = (D.titulares && D.titulares.length)
+      ? D.titulares
+      : [...new Set(TODOS().map(p => p.titular).filter(Boolean))];
+    if (!tits.length) { cont.innerHTML = ""; return; }
+    if (!["todos", ...tits].includes(estado.titular)) estado.titular = "todos";
+    cont.innerHTML = `<label for="selTitular">Ver de:</label>
+      <select id="selTitular"><option value="todos">Todos los titulares</option>
+      ${tits.map(t => `<option value="${esc(t)}"${t === estado.titular ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+    $("#selTitular").onchange = e => { estado.titular = e.target.value; pintaPatrimonio(); };
+  }
+
+  /* Evolución del hogar: patrimonio neto frente a deudas en el tiempo. */
+  function pintaEvolucionHogar() {
+    const cont = $("#grafDeuda"), card = $("#tarjetaDeudaEvol"), t = D.total;
+    if (!cont) return;
+    if (!t.serieDeuda) { if (card) card.hidden = true; return; }
+    if (card) card.hidden = false;
+    G.multiLinea(cont, {
+      fechas: corta(D.fechas), alto: 260, desdeCero: true,
+      series: [
+        { nombre: "Patrimonio neto", color: G.css("--s1"), valores: corta(t.serie), destacado: true },
+        { nombre: "Deudas", color: G.css("--s8"), valores: corta(t.serieDeuda) },
+      ],
+      formatoY: v => G.fmtEurCorto(v), formatoValor: v => G.fmtEur(v),
+    });
+  }
+
+  /* Evolución de ingresos, gastos y ahorro mes a mes (últimos 12 meses). */
+  function pintaFlujosGraf() {
+    const cont = $("#grafFlujosEvol"), f = D.flujos;
+    if (!cont) return;
+    if (!f) { cont.innerHTML = ""; return; }
+    G.multiLinea(cont, {
+      fechas: f.meses.map(m => m + "-01"), alto: 240, desdeCero: true,
+      series: [
+        { nombre: "Ingresos", color: G.css("--s6"), valores: f.ingresos },
+        { nombre: "Gastos", color: G.css("--s8"), valores: f.gastos },
+        { nombre: "Ahorro", color: G.css("--s1"), valores: f.ahorro, destacado: true },
+      ],
+      formatoY: v => G.fmtEurCorto(v), formatoValor: v => G.fmtEur(v),
+    });
+  }
+
+  /* Banner de alertas del cuadro de control (F4). */
+  function pintaAlertas() {
+    const cont = $("#bannerAlertas"), al = D.alertas || [];
+    cont.innerHTML = al.map(a => {
+      const color = a.nivel === "info" ? "var(--tinta2)" : "var(--mal)";
+      return `<div class="avisoLinea" style="border-left:3px solid ${color}"><b>${a.n}</b> ${esc(a.texto)}</div>`;
+    }).join("");
+  }
+
+  /* Asignación por tipo frente al objetivo, con desviación, estado y concentración. */
+  function pintaAsignacion() {
+    const card = $("#tarjetaAsignacion"), a = D.asignacion || [];
+    if (!a.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const conObj = a.some(x => x.objetivo != null);
+    $("#asigSub").textContent = conObj
+      ? "Peso actual frente a tu objetivo, y cuánto aportar o reducir para rebalancear"
+      : "Peso por tipo · define objetivos en «Mis datos → Configuración» para ver el rebalanceo";
+    const tag = e => {
+      const c = e === "OK" ? "var(--bien)" : e === "Sin objetivo" ? "var(--tinta3)" : "var(--mal)";
+      return `<span style="color:${c}">${e}</span>`;
+    };
+    const ajusteCel = x => {
+      if (x.ajuste == null) return "—";
+      if (Math.abs(x.ajuste) < 1) return '<span style="color:var(--bien)">en objetivo</span>';
+      const cl = x.ajuste > 0 ? "pos" : "neg";
+      const verbo = x.ajuste > 0 ? "aporta " : "reduce ";
+      return `<span class="${cl}">${verbo}${G.fmtEur(Math.abs(x.ajuste), 0)}</span>`;
+    };
+    const filas = a.map(x => `<tr>
+      <td><i class="pt" style="background:${(x.color && x.color[0]) || "#888"}"></i>${esc(x.tipo)}${x.concentracion ? ' <span style="color:var(--mal)" title="Concentración por encima del umbral">●</span>' : ""}</td>
+      <td style="text-align:right">${G.fmtEur(x.valor, 0)}</td>
+      <td style="text-align:right">${G.fmtPct(x.peso, 0)}</td>
+      <td style="text-align:right">${x.objetivo != null ? G.fmtPct(x.objetivo, 0) : "—"}</td>
+      <td style="text-align:right">${x.desviacion != null ? G.fmtPctSigno(x.desviacion) : "—"}</td>
+      <td style="text-align:right">${ajusteCel(x)}</td>
+      <td>${tag(x.estado)}</td></tr>`).join("");
+    $("#asigTabla").innerHTML =
+      `<thead><tr><th>Tipo</th><th style="text-align:right">Valor</th><th style="text-align:right">Peso</th>
+        <th style="text-align:right">Objetivo</th><th style="text-align:right">Desviación</th>
+        <th style="text-align:right">Rebalanceo</th><th>Estado</th></tr></thead><tbody>${filas}</tbody>`;
+    const cont = $("#asigRebal");
+    if (cont) {
+      const mov = a.filter(x => x.ajuste != null && Math.abs(x.ajuste) >= 1);
+      cont.innerHTML = (conObj && mov.length)
+        ? `<p class="subt" style="margin-top:10px">Para volver a tu objetivo: ` + mov.map(x =>
+          `${x.ajuste > 0 ? "aporta " : "reduce "}<b>${G.fmtEur(Math.abs(x.ajuste), 0)}</b> ${x.ajuste > 0 ? "a" : "de"} ${esc(x.tipo)}`).join(" · ") + ".</p>"
+        : "";
+    }
+  }
+
+  /* Vencimientos ordenados por fecha, con días restantes y estado. */
+  function pintaVencimientos() {
+    const card = $("#tarjetaVenc"), v = D.vencimientos || [];
+    if (!v.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const tag = e => {
+      const c = e === "Vencido" ? "var(--mal)" : e === "Próximo" ? "#c98500" : "var(--bien)";
+      return `<span style="color:${c}">${e}</span>`;
+    };
+    const filas = v.map(x => `<tr>
+      <td>${esc(x.nombre)}</td><td>${esc(x.clase)}</td><td>${esc(x.entidad || "")}</td><td>${esc(x.titular || "")}</td>
+      <td>${G.fmtFecha(x.fecha)}</td><td style="text-align:right">${x.diasRestantes} d</td>
+      <td>${tag(x.estado)}</td></tr>`).join("");
+    $("#vencTabla").innerHTML =
+      `<thead><tr><th>Concepto</th><th>Clase</th><th>Entidad</th><th>Titular</th><th>Fecha</th>
+        <th style="text-align:right">Días</th><th>Estado</th></tr></thead><tbody>${filas}</tbody>`;
   }
 
   function pintaPrincipal(m) {
@@ -439,9 +794,16 @@
         ? "Hubo días por debajo de lo aportado: ahí la banda verde desaparece."
         : "La banda verde es rentabilidad, no dinero tuyo.";
     } else if (estado.vista === "reparto") {
-      const series = prods.map(p => ({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) }));
-      const tot = fechas.map((_, i) => series.reduce((a, s) => a + (s.valores[i] || 0), 0));
-      series.forEach(s => { s.valores = s.valores.map((v, i) => tot[i] ? (v || 0) / tot[i] * 100 : 0); });
+      // El reparto % es la composición de los ACTIVOS (lo que tienes). Las deudas
+      // (pasivos) tienen serie negativa: si se colaran, los activos sumarían más
+      // del 100 % y el área se saldría por arriba. Se excluyen y se toma solo lo
+      // positivo, de modo que cada día suma exactamente 100 %.
+      const idsPasivo = new Set((D.pasivos || []).map(p => p.id));
+      const series = prods
+        .filter(p => !idsPasivo.has(p.id))
+        .map(p => ({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) }));
+      const tot = fechas.map((_, i) => series.reduce((a, s) => a + Math.max(0, s.valores[i] || 0), 0));
+      series.forEach(s => { s.valores = s.valores.map((v, i) => tot[i] ? Math.max(0, v || 0) / tot[i] * 100 : 0); });
       G.areaApilada(cont, {
         fechas, series, alto: 330, maxForzado: 100,
         formatoY: v => Math.round(v) + " %",
@@ -473,12 +835,12 @@
       const plTarjeta = plusvaliaDe(p);
       const rent = plTarjeta ? plTarjeta.pct : null;
       b.innerHTML = `<span class="barra"></span>
-        <div class="nm"><i></i>${p.corto || p.nombre}</div>
+        <div class="nm"><i></i>${esc(p.corto || p.nombre)}</div>
         <div class="vl">${G.fmtEur(valorDe(p))}</div>
         <div class="pi"><span>${oculto ? "fuera del gráfico" : G.fmtPct(p.peso, 1) + " del total"}</span>
           <span class="${rent == null ? "" : rent >= 0 ? "pos" : "neg"}">${rent == null ? "—" : G.fmtPctSigno(rent, 1)}</span></div>
         <div class="sp"></div>`;
-      b.onclick = () => { estado.fondo = p.id; irA("fondos"); };
+      b.onclick = () => { estado.fondo = p.id; irVista("producto"); };
       cont.appendChild(b);
       G.mini(b.querySelector(".sp"), corta(p.serie), color(p));
     });
@@ -495,10 +857,10 @@
     G.donut($("#grafDonut"), {
       datos, alto: 236, tituloCentro: filtrando() ? "Filtrado" : "Total",
       valorCentro: G.fmtEurCorto(total),
-      onClick: d => { if (d.id) { estado.fondo = d.id; irA("fondos"); } }
+      onClick: d => { if (d.id) { estado.fondo = d.id; irVista("producto"); } }
     });
     $("#leyendaDist").innerHTML = datos.map(d =>
-      `<tr><td><i style="background:${d.color}"></i>${d.nombre}</td>
+      `<tr><td><i style="background:${d.color}"></i>${esc(d.nombre)}</td>
        <td>${G.fmtEur(d.valor)}</td><td>${G.fmtPct(d.valor / total, 1)}</td></tr>`).join("");
   }
 
@@ -585,7 +947,7 @@
       `<thead><tr>${cols.map(c => `<th class="orden" data-c="${c[0]}">${c[1]}${o.col === c[0] ? (o.desc ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead>
        <tbody>${f.map(r => `<tr>
         <td>${G.fmtFecha(r.fecha)}</td>
-        <td><i class="pt" style="background:${r.color}"></i>${r.producto}</td>
+        <td><i class="pt" style="background:${r.color}"></i>${esc(r.producto)}</td>
         <td>${G.fmtEur(r.importe)}</td>
         <td>${r.valor != null ? G.fmtEur(r.valor) : "—"}</td>
         <td class="${r.pl >= 0 ? "pos" : "neg"}">${r.pl != null ? G.fmtEurSigno(r.pl) : "—"}</td>
@@ -602,19 +964,116 @@
       `${f.length} movimientos · ${G.fmtEur(f.reduce((a, r) => a + r.importe, 0), 0)}`;
   }
 
+  /* Mes de referencia: ver el panel como estaba a fin de un mes pasado. */
+  const NOMBRE_MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  function mesBonito(m) { const p = String(m).split("-"); return NOMBRE_MES[+p[1] - 1] + " " + p[0]; }
+  function pintaMesReferencia() {
+    const cont = $("#mesReferencia");
+    if (!cont) return;
+    const meses = (D.mesesDisponibles || []);
+    if (!meses.length) { cont.innerHTML = ""; cont.classList.remove("activo"); return; }
+    const actual = D.hasta || "";
+    const ir = m => {
+      const qs = new URLSearchParams(location.search);
+      if (m) qs.set("hasta", m); else qs.delete("hasta");
+      qs.set("tab", "panel");
+      location.search = qs.toString();
+    };
+    const ops = `<option value="">Hoy (último dato)</option>` +
+      meses.slice().reverse().map(m => `<option value="${esc(m)}"${m === actual ? " selected" : ""}>${esc(mesBonito(m))}</option>`).join("");
+    cont.innerHTML =
+      (actual ? `<span class="avisoHasta">📅 Estás viendo tu patrimonio <b>a fin de ${esc(mesBonito(actual))}</b>, no los datos de hoy.${info("Las cantidades (saldos, precios) son las de aquella fecha. Algunos ajustes que no guardan histórico —colchón, apartados y los datos fijos de las deudas— se muestran con su valor actual.")}</span>` : "") +
+      `<span class="mesRefCtrl"><label for="selMesRef">Ver a fecha:</label>
+        <select id="selMesRef">${ops}</select>
+        ${actual ? '<button class="btn" id="btnHoy">Volver a hoy</button>' : ""}</span>`;
+    $("#selMesRef").onchange = e => ir(e.target.value || null);
+    const bh = $("#btnHoy"); if (bh) bh.onclick = () => ir(null);
+    cont.classList.toggle("activo", !!actual);
+  }
+
+  /* Informe fiscal (IRPF): ganancias/pérdidas por FIFO y dividendos, por año. */
+  function pintaFiscal() {
+    const fisc = D.fiscal || {};
+    const anios = Object.keys(fisc).sort().reverse();
+    const cont = $("#fiscalContenido"), selC = $("#selFiscalCont");
+    if (!anios.length) {
+      selC.innerHTML = "";
+      cont.innerHTML = '<p class="vacio">Todavía no hay ventas ni dividendos anotados. Cuando los tengas, aquí verás el resumen por año, listo para imprimir.</p>';
+      return;
+    }
+    if (!estado.anioFiscal || !fisc[estado.anioFiscal]) estado.anioFiscal = anios[0];
+    selC.innerHTML = `<label for="selAnioFisc" style="font-size:13px;color:var(--tinta2)">Año fiscal: </label>
+      <select id="selAnioFisc">${anios.map(a => `<option value="${esc(a)}"${a === estado.anioFiscal ? " selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
+    $("#selAnioFisc").onchange = e => { estado.anioFiscal = e.target.value; pintaFiscal(); };
+
+    const dat = fisc[estado.anioFiscal] || {}, t = dat.totales || {};
+    dat.ventas = dat.ventas || []; dat.rendimientos = dat.rendimientos || [];
+    const eur = v => G.fmtEur(v);
+    const signo = v => `<span style="color:${v >= 0 ? "var(--bien)" : "var(--mal)"}">${v >= 0 ? "+" : ""}${eur(v)}</span>`;
+    const unid = v => G.nfNum.format(v);
+    const fFecha = s => s ? String(s).split(" … ").map(x => G.fmtFecha(x)).join(" … ") : "—";
+    const dr = ' style="text-align:right"';
+    $("#fiscalTitulo").textContent = "Informe fiscal " + estado.anioFiscal;
+    $("#fiscalSub").textContent = (D.titular || "Patrimonio") + " · ejercicio " + estado.anioFiscal;
+
+    const avisos = (dat.avisos || []).length
+      ? `<div class="bannerAlertas" style="margin-bottom:12px">${dat.avisos.map(a => `<div class="av"><span>⚠</span><span>${esc(a)}</span></div>`).join("")}</div>`
+      : "";
+
+    const resumen = `<div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="e">Ganancias</div><div class="v">${eur(t.ganancias)}</div><div class="n">ventas con beneficio</div></div>
+      <div class="kpi"><div class="e">Pérdidas</div><div class="v">${eur(t.perdidas)}</div><div class="n">ventas con pérdida</div></div>
+      <div class="kpi"><div class="e">Resultado neto</div><div class="v ${t.gananciaNeta >= 0 ? "pos" : "neg"}">${eur(t.gananciaNeta)}</div><div class="n">ganancia o pérdida patrimonial</div></div>
+      <div class="kpi"><div class="e">Dividendos y cupones</div><div class="v">${eur(t.rendimientos)}</div><div class="n">rendimiento del capital</div></div>
+    </div>`;
+
+    const hTit = txt => `<h3 style="font-size:14px;margin:18px 0 8px">${txt}</h3>`;
+    const ventas = dat.ventas.length ? hTit("Ganancias y pérdidas patrimoniales (ventas)") +
+      `<div class="tablaEnv"><table class="dt"><thead><tr>
+        <th>Producto</th><th>Fecha de adquisición</th><th>Fecha de venta</th><th${dr}>Unidades</th>
+        <th${dr}>Valor de adquisición</th><th${dr}>Valor de transmisión</th><th${dr}>Ganancia/Pérdida</th></tr></thead>
+      <tbody>${dat.ventas.map(v => `<tr>
+        <td>${esc(v.producto)}${v.sinCoste ? ' <span style="color:var(--mal)" title="Falta registrar las compras: coste incompleto">⚠</span>' : ""}</td>
+        <td>${fFecha(v.fechaAdquisicion)}</td><td>${G.fmtFecha(v.fecha)}</td>
+        <td${dr}>${unid(v.unidades)}</td><td${dr}>${eur(v.adquisicion)}</td><td${dr}>${eur(v.transmision)}</td><td${dr}>${signo(v.ganancia)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="4">Totales</td><td${dr}>${eur(t.adquisicion)}</td><td${dr}>${eur(t.transmision)}</td><td${dr}>${signo(t.gananciaNeta)}</td></tr></tfoot>
+      </table></div>` : `<p class="vacio">No hay ventas en ${esc(estado.anioFiscal)}.</p>`;
+
+    const rend = dat.rendimientos.length ? hTit("Rendimientos del capital mobiliario (dividendos y cupones)") +
+      `<div class="tablaEnv"><table class="dt"><thead><tr><th>Producto</th><th>Fecha</th><th${dr}>Importe</th></tr></thead>
+      <tbody>${dat.rendimientos.map(r => `<tr><td>${esc(r.producto)}</td><td>${G.fmtFecha(r.fecha)}</td><td${dr}>${eur(r.importe)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="2">Total</td><td${dr}>${eur(t.rendimientos)}</td></tr></tfoot></table></div>`
+      : `<p class="vacio">No hay dividendos ni cupones en ${esc(estado.anioFiscal)}.</p>`;
+
+    cont.innerHTML = avisos + resumen + ventas + rend;
+  }
+
   function pintaPatrimonio() {
     const mTodo = metricas(TODOS());
     const mVis = filtrando() ? metricas(visibles()) : mTodo;
+    const pv = estado.pv || "patrimonio";
+    // Cifras y tablas (baratas): se rellenan siempre, aunque su vista esté oculta.
     pintaFiltros();
     pintaHero(mVis, mTodo);
     pintaKPIs(mVis);
-    pintaPrincipal(mVis);
+    pintaAlertas();
+    pintaMesReferencia();
+    pintaFiltroTitular();
+    pintaHogar();
+    pintaDeudas();
+    pintaFlujos();
+    pintaAsignacion();
+    pintaVencimientos();
     pintaChips();
-    pintaDistribucion();
-    pintaBarras();
     pintaHitos(mTodo);
-    pintaProyeccion();
-    pintaTabla();
+    // Gráficos: solo los de la vista visible (un SVG en un panel oculto sale con ancho 0).
+    if (pv === "evolucion") { pintaPrincipal(mVis); pintaBarras(); pintaMes(); pintaEvolucionHogar(); }
+    else if (pv === "distribucion") pintaDistribucion();
+    else if (pv === "rentabilidad") { pintaProyeccion(); pintaTabla(); pintaRendimiento(); }
+    else if (pv === "ingresos") pintaFlujosGraf();
+    else if (pv === "fiscal") pintaFiscal();
+    else if (pv === "producto") pintaFondos();
+    // Segmentos: sus callbacks redibujan la vista activa.
     pintaSegm($("#segRango"), RANGOS, estado.rango, id => { estado.rango = id; pintaPatrimonio(); });
     pintaSegm($("#segVista"), [
       { id: "apilado", et: "Por producto" }, { id: "total", et: "Total" },
@@ -633,31 +1092,65 @@
   /* ================================================================
      PESTAÑA 2 · EL MES
      ================================================================ */
+  // Agrega los meses de un año en la misma forma que un mes de resumenMensual,
+  // para ver el cambio «en lo que va de año» y el detalle por componente.
+  function resumenAnio(anio) {
+    const meses = (D.resumenMensual || []).filter(x => x.mes.slice(0, 4) === anio);
+    if (!meses.length) return { mes: anio, inicio: 0, fin: 0, aportado: 0, mercado: 0, nuevo: 0, porProducto: {} };
+    const prim = meses[0], ult = meses[meses.length - 1];
+    const r = { mes: anio, inicio: prim.inicio, fin: ult.fin, aportado: 0, mercado: 0, nuevo: 0, porProducto: {} };
+    let rent = 1, hayRent = false;
+    meses.forEach(m => {
+      r.aportado += m.aportado || 0; r.mercado += m.mercado || 0; r.nuevo += m.nuevo || 0;
+      if (m.rentabilidad != null) { rent *= 1 + m.rentabilidad; hayRent = true; }
+      Object.entries(m.porProducto || {}).forEach(([id, d]) => {
+        const a = r.porProducto[id] || (r.porProducto[id] = { inicio: d.inicio, fin: d.fin, aportado: 0, mercado: 0, nuevo: 0 });
+        a.fin = d.fin;
+        a.aportado += d.aportado || 0; a.mercado += d.mercado || 0; a.nuevo += d.nuevo || 0;
+      });
+    });
+    r.rentabilidad = hayRent ? rent - 1 : null;
+    return r;
+  }
+
   function pintaMes() {
     const rm = D.resumenMensual || [];
     if (!rm.length) { $("#mesCifra").textContent = "—"; return; }
-    if (estado.mes == null || estado.mes < 0 || estado.mes >= rm.length) estado.mes = rm.length - 1;
-    const r = rm[estado.mes];
+    const periodo = estado.periodo || "mes";
+    const anios = [...new Set(rm.map(x => x.mes.slice(0, 4)))];
 
+    pintaSegm($("#segPeriodo"), [{ id: "mes", et: "Mes" }, { id: "anio", et: "Año" }],
+      periodo, id => { estado.periodo = id; pintaMes(); });
+
+    let r, ultimo;
     const sel = $("#mesSel");
-    if (sel.options.length !== rm.length) {
+    if (periodo === "anio") {
+      if (estado.anio == null || !anios.includes(estado.anio)) estado.anio = anios[anios.length - 1];
+      r = resumenAnio(estado.anio);
+      ultimo = estado.anio === anios[anios.length - 1];
+      sel.innerHTML = anios.map(a => `<option value="${a}">${a}</option>`).join("");
+      sel.value = estado.anio;
+      $("#mesPrev").disabled = anios.indexOf(estado.anio) === 0;
+      $("#mesNext").disabled = ultimo;
+      $("#mesEtq").textContent = ultimo ? "Cambio en lo que va de año" : "Cambio del año";
+    } else {
+      if (estado.mes == null || estado.mes < 0 || estado.mes >= rm.length) estado.mes = rm.length - 1;
+      r = rm[estado.mes];
+      ultimo = estado.mes === rm.length - 1;
       sel.innerHTML = rm.map((x, i) => `<option value="${i}">${G.fmtMes(x.mes)}</option>`).join("");
+      sel.value = String(estado.mes);
+      $("#mesPrev").disabled = estado.mes === 0;
+      $("#mesNext").disabled = ultimo;
+      $("#mesEtq").textContent = ultimo ? "Cambio en lo que va de mes" : "Cambio del mes";
     }
-    sel.value = String(estado.mes);
-    $("#mesPrev").disabled = estado.mes === 0;
-    $("#mesNext").disabled = estado.mes === rm.length - 1;
 
-    const cambio = r.fin - r.inicio;
     // El titular es el cambio REAL: lo que aportaste mas lo que hizo el mercado.
-    // Incorporar una cuenta al panel mueve el saldo pero no es dinero ganado,
-    // asi que va aparte y no infla la cifra grande.
     const real = r.aportado + r.mercado;
-    const ultimo = estado.mes === rm.length - 1;
-    $("#mesEtq").textContent = ultimo ? "Cambio en lo que va de mes" : "Cambio del mes";
+    const cambio = r.fin - r.inicio;
     $("#mesCifra").textContent = G.fmtEurSigno(real);
     $("#mesCifra").className = "hCifra " + (real >= 0 ? "pos" : "neg");
     $("#mesNota").textContent = ultimo
-      ? "Mes en curso, con datos hasta el " + G.fmtFecha(D.fechaExtracto) : "";
+      ? (periodo === "anio" ? "Año en curso, " : "Mes en curso, ") + "con datos hasta el " + G.fmtFecha(D.fechaExtracto) : "";
     const trozos = [`De <span class="fuerte">${G.fmtEur(r.inicio)}</span> a <span class="fuerte">${G.fmtEur(r.fin)}</span>`];
     if (r.rentabilidad != null) {
       trozos.push(`rentabilidad de la cartera
@@ -693,7 +1186,7 @@
        <tbody>${filas.map(({ p, d }) => {
         const var_ = d.fin - d.inicio;
         return `<tr>
-          <td><i class="pt" style="background:${color(p)}"></i>${p.corto || p.nombre}</td>
+          <td><i class="pt" style="background:${color(p)}"></i>${esc(p.corto || p.nombre)}</td>
           <td>${G.fmtEur(d.inicio)}</td>
           <td>${d.aportado ? G.fmtEur(d.aportado) : "—"}</td>
           <td class="${d.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(d.mercado)}</td>
@@ -734,7 +1227,7 @@
       const b = document.createElement("button");
       b.style.setProperty("--c", color(x));
       b.setAttribute("aria-pressed", String(x.id === estado.fondo));
-      b.innerHTML = `<i></i>${x.corto || x.nombre}`;
+      b.innerHTML = `<i></i>${esc(x.corto || x.nombre)}`;
       b.onclick = () => { estado.fondo = x.id; pintaFondos(); };
       $("#selFondo").appendChild(b);
     });
@@ -770,15 +1263,15 @@
 
     sec.innerHTML = `
       <header>
-        <h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color(p)};margin-right:9px"></span>${p.nombre}</h2>
+        <h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color(p)};margin-right:9px"></span>${esc(p.nombre)}</h2>
         <div class="sep"></div>
         ${hayVL ? '<div class="segm" id="segSerie"></div>' : ""}
       </header>
-      ${p.papel ? `<div class="papel">${p.papel}</div>` : ""}
-      ${p.indiceDetalle ? `<p style="color:var(--tinta2);font-size:13.5px;margin:0 0 16px">${p.indiceDetalle}</p>` : ""}
+      ${p.papel ? `<div class="papel">${esc(p.papel)}</div>` : ""}
+      ${p.indiceDetalle ? `<p style="color:var(--tinta2);font-size:13.5px;margin:0 0 16px">${esc(p.indiceDetalle)}</p>` : ""}
       <div class="ficha">${campos.map(c => `<div><dt>${c[0]}</dt><dd>${c[1]}</dd></div>`).join("")}</div>
       <div id="ventanas"></div>
-      ${pocos ? '<p class="subt" style="margin:0 0 12px">Solo hay un valor anotado, así que aún no hay curva. Anota más en «Mis datos → Saldos y valores».</p>' : ""}
+      ${pocos ? '<p class="subt" style="margin:0 0 12px">Solo hay un valor anotado, así que aún no hay curva. Anota más en «Mis datos → Saldos y movimientos».</p>' : ""}
       <div class="envGraf" id="grafFondo"></div>
       <div class="tramos" id="tramosLey"></div>`;
 
@@ -881,7 +1374,7 @@
       ${e.top10 ? `<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--tinta3);margin:24px 0 10px">
         Las 10 mayores posiciones · ${e.top10.reduce((a, x) => a + x[1], 0).toFixed(1)} % del fondo</h3>
         <div class="tablaEnv"><table class="dt"><tbody>${e.top10.map(x =>
-          `<tr><td>${x[0]}</td><td>${x[1].toLocaleString("es-ES", { minimumFractionDigits: 2 })} %</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+          `<tr><td>${esc(x[0])}</td><td>${x[1].toLocaleString("es-ES", { minimumFractionDigits: 2 })} %</td></tr>`).join("")}</tbody></table></div>` : ""}`;
     G.barrasHorizontales($("#expoPaises"), { datos: e.paises, color: color(p) });
     G.barrasHorizontales($("#expoSectores"), { datos: e.sectores, color: color(p) });
   }
@@ -952,7 +1445,7 @@
         `<thead><tr><th>Producto</th>${ra.anos.map((a, i) =>
           `<th>${a}${ra.parcial[i] ? " *" : ""}</th>`).join("")}</tr></thead>
          <tbody>${prods.map(p => `<tr>
-           <td><i class="pt" style="background:${color(p)}"></i>${p.corto}</td>
+           <td><i class="pt" style="background:${color(p)}"></i>${esc(p.corto)}</td>
            ${tabla[p.id].map((v, i) => celda(v, (desde[p.id] || [])[i])).join("")}
          </tr>`).join("")}</tbody>` +
         (verProducto ? "" : `<tfoot><tr><td>Tu cartera</td>${ra.cartera.map(v =>
@@ -988,7 +1481,7 @@
          <tbody>${comp.map((c, i) => {
           const m = c.metricas;
           return `<tr class="${c.real ? "destacada" : ""}">
-            <td><i class="pt" style="background:${series[i].color}"></i>${c.nombre}</td>
+            <td><i class="pt" style="background:${series[i].color}"></i>${esc(c.nombre)}</td>
             <td class="${m.rentTotal >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(m.rentTotal, 1)}</td>
             <td class="${m.cagr >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(m.cagr, 1)}</td>
             <td>${G.fmtPct(m.vol, 1)}</td>
@@ -1012,7 +1505,7 @@
       $("#tablaComisiones").innerHTML =
         `<thead><tr><th>Producto</th><th>Comisión</th><th>Sobre</th><th>Al año</th><th>Al mes</th></tr></thead>
          <tbody>${c.lineas.map(l => `<tr>
-            <td><i class="pt" style="background:${temaOscuro() ? l.color[1] : l.color[0]}"></i>${l.nombre}</td>
+            <td><i class="pt" style="background:${temaOscuro() ? l.color[1] : l.color[0]}"></i>${esc(l.nombre)}</td>
             <td>${G.fmtPct(l.ter, 2)}</td><td>${G.fmtEur(l.valor, 0)}</td>
             <td>${G.fmtEur(l.anual)}</td><td>${G.fmtEur(l.anual / 12)}</td></tr>`).join("")}</tbody>
          <tfoot><tr><td>Total</td><td>${G.fmtPct(c.terPonderado, 3)}</td>
@@ -1024,21 +1517,25 @@
   /* ---------------------------------------------- avisos y pie */
   function pintaComun() {
     $("#avisos").innerHTML = (D.avisos || [])
-      .map(a => `<div class="av"><span>⚠</span><span>${a}</span></div>`).join("");
+      .map(a => `<div class="av"><span>⚠</span><span>${esc(a)}</span></div>`).join("");
     const pa = D.preciosActualizados;
     const fuentes = [...new Set(D.productos.map(p => p.fuentePrecio).filter(Boolean))];
     $("#pie").innerHTML =
       `${pa ? `Precios actualizados el ${G.fmtFecha(pa.slice(0, 10))} a las ${pa.slice(11, 16)}` : "Precios sin actualizar"} ·
        datos valorados a ${G.fmtFecha(D.fechaExtracto)} ·
        ${D.total.diasInvertido} días invertido.<br>
-       Fuentes de precios: ${fuentes.join(", ") || "ninguna"}. En la pestaña Productos verás la de cada uno.<br>
+       Fuentes de precios: ${fuentes.join(", ") || "ninguna"}. En «Panel → Distribución» pulsa un producto para ver su ficha.<br>
        <b>Aviso:</b> herramienta informativa. No es asesoramiento financiero ni una recomendación de compra o venta.
        Los precios vienen de servicios públicos gratuitos y pueden tener errores o retrasos: no se garantiza su exactitud.`;
+    // Los créditos viven al final de «Ayuda». En la web exportada (que no incluye
+    // «Ayuda») se mantiene la atribución en el pie para no perderla al compartir.
+    if (window.ESTATICO) {
+      $("#pie").insertAdjacentHTML("beforeend",
+        `<br><span class="creditoMod">Rumbo, de Dani Dominguez Quant · fork (gestor de patrimonio de hogar) por Alonso (github.com/AlonsoVine).</span>`);
+    }
     if ($("#bannerDemo")) $("#bannerDemo").hidden = D.modo !== "demo";
     const K = window.CANAL;
     if (K) {
-      $("#pie").insertAdjacentHTML("beforeend", `<span class="creditoCanal">Herramienta gratuita hecha por
-        ${K.autor} · ¿Te resulta útil? <a href="${K.suscribir}" target="_blank" rel="noopener">Suscríbete al canal ▶</a></span>`);
       document.querySelectorAll(".autorCanal").forEach(el => { el.textContent = K.autor; });
       document.querySelectorAll(".enlaceCanal").forEach(el => { el.href = K.canal; });
       document.querySelectorAll(".enlaceSuscribir").forEach(el => { el.href = K.suscribir; });
@@ -1071,39 +1568,148 @@
   }
 
   /* ---------------------------------------------- pestañas */
+  // Recarga volviendo a HOY: al cambiar de cartera, editar o actualizar precios no
+  // queremos seguir «viendo un mes pasado» (daría una foto antigua y confusa).
+  function recargaHoy() {
+    const q = new URLSearchParams(location.search);
+    if (q.has("hasta")) { q.delete("hasta"); location.search = q.toString(); }
+    else location.reload();
+  }
+
   function irA(tab) {
     // Si has cambiado datos en «Mis datos», el panel se recarga con las cifras nuevas.
     if (window.EDITOR_SUCIO && tab !== "datos") {
       recuerda.guarda("patrimonio.tab", tab);
-      location.reload();
+      recargaHoy();
       return;
     }
     estado.tab = tab;
     document.querySelectorAll("#tabs button").forEach(b =>
       b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     document.querySelectorAll(".panel").forEach(p => { p.hidden = p.id !== "tab-" + tab; });
+    // «Imprimir» solo tiene sentido en el Panel (imprime la vista activa del panel).
+    if ($("#btnImprimir")) $("#btnImprimir").hidden = tab !== "panel";
     recuerda.guarda("patrimonio.tab", tab);
     pintarTab();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Cambia de sub-pestaña dentro del Panel (Patrimonio, Distribución, …).
+  function irVista(pv) {
+    if (pv === "producto" && !estado.fondo) pv = "distribucion";
+    estado.pv = pv;
+    document.querySelectorAll("#subtabs button").forEach(b =>
+      b.setAttribute("aria-selected", String(b.dataset.pv === pv)));
+    document.querySelectorAll(".pv").forEach(el => { el.hidden = el.id !== "pv-" + pv; });
+    if (pv !== "producto") recuerda.guarda("patrimonio.pv", pv);
+    pintaPatrimonio();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function pintarTab() {
-    // Cada pestaña se dibuja al mostrarse: un SVG dentro de un panel oculto
+    // Cada vista se dibuja al mostrarse: un SVG dentro de un panel oculto
     // no tiene ancho, y saldria del tamano equivocado.
-    if (estado.tab === "patrimonio") pintaPatrimonio();
-    else if (estado.tab === "mes") pintaMes();
-    else if (estado.tab === "fondos") pintaFondos();
-    else if (estado.tab === "rendimiento") pintaRendimiento();
-    else if (estado.tab === "datos" && window.Editor) window.Editor.mostrar();
+    if (estado.tab === "panel") {
+      const pv = estado.pv || "patrimonio";
+      document.querySelectorAll("#subtabs button").forEach(b =>
+        b.setAttribute("aria-selected", String(b.dataset.pv === pv)));
+      document.querySelectorAll(".pv").forEach(el => { el.hidden = el.id !== "pv-" + pv; });
+      pintaPatrimonio();
+    } else if (estado.tab === "datos" && window.Editor) window.Editor.mostrar();
+    else if (estado.tab === "ajustes") pintaAjustes();
   }
   function pintar() { pintaComun(); pintarTab(); }
 
+  /* Selector de carteras en la barra superior: cambiar entre las tuyas o crear una nueva. */
+  async function montaSelectorCarteras() {
+    const sel = $("#selCartera"), txt = $("#marcaTexto");
+    if (!sel) return;
+    let j;
+    try { j = await (await fetch("api/carteras")).json(); } catch (e) { return; }
+    if (j.modo !== "propio" || !(j.carteras || []).length) return;   // demo: se queda el texto
+    if (txt) txt.hidden = true;
+    sel.hidden = false;
+    sel.innerHTML = j.carteras.map(c =>
+      `<option value="${esc(c.id)}"${c.id === j.activa ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")
+      + '<option value="__nueva__">＋ Nuevo patrimonio…</option>';
+    sel.onchange = async () => {
+      const v = sel.value;
+      const post = (url, cuerpo) => fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
+      });
+      try {
+        if (v === "__nueva__") {
+          const nombre = (prompt("Nombre del nuevo patrimonio (se crea vacío):") || "").trim();
+          if (!nombre) { sel.value = j.activa; return; }
+          const r = await (await post("api/cartera/nueva", { nombre })).json();
+          if (r.ok === false) { alert((r.errores || ["No se pudo crear."]).join("\n")); sel.value = j.activa; return; }
+        } else if (v !== j.activa) {
+          await post("api/cartera/activar", { id: v });
+        } else { return; }
+        recuerda.guarda("patrimonio.tab", "panel");
+        recargaHoy();
+      } catch (e) { alert("No he podido cambiar de patrimonio."); sel.value = j.activa; }
+    };
+  }
+
+  // Eliminar el patrimonio activo: avisa, descarga una copia y borra. Autónomo
+  // (se llama desde «Mis datos → Copias y seguridad»). Expuesto como window.borrarPatrimonio.
+  async function borrarPatrimonio() {
+    let j;
+    try { j = await (await fetch("api/carteras")).json(); } catch (e) { alert("No he podido comprobar tus patrimonios."); return; }
+    const lista = j.carteras || [];
+    if (j.modo !== "propio" || lista.length <= 1) {
+      alert("Solo tienes un patrimonio, así que no se puede eliminar.\n\nSi quieres separar tu patrimonio en varios, crea otro desde el selector de arriba («＋ Nuevo patrimonio…») y luego podrás borrar el que no necesites.");
+      return;
+    }
+    const nombre = (lista.find(c => c.id === j.activa) || {}).nombre || "este patrimonio";
+    const dlg = $("#dlgBorrarCartera");
+    if (!dlg) return;
+    $("#borrarNombre").textContent = nombre;
+    const cb = $("#borrarConfirmo"), ok = $("#borrarOk");
+    cb.checked = false; ok.disabled = true; ok.textContent = "Descargar copia y eliminar";
+    try { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", ""); }
+    catch (e) { try { dlg.setAttribute("open", ""); } catch (e2) { return; } }
+    const cerrar = () => { try { dlg.close(); } catch (e) { dlg.removeAttribute("open"); } };
+    $("#borrarCancelar").onclick = cerrar;
+    ok.onclick = async () => {
+      ok.disabled = true; ok.textContent = "Eliminando…";
+      try {
+        // 1) Copia de seguridad del patrimonio que se va a borrar (es el activo).
+        try {
+          const r = await fetch("api/copia/descargar");
+          if (r.ok) {
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "copia_" + nombre + ".json";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+          }
+        } catch (e) { /* si falla la copia, seguimos; el aviso ya lo dejó claro */ }
+        // 2) Borrado.
+        const res = await (await fetch("api/cartera/borrar", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: j.activa }),
+        })).json();
+        if (res.ok === false) { alert((res.errores || ["No se pudo eliminar."]).join("\n")); cerrar(); return; }
+        recuerda.guarda("patrimonio.tab", "panel");
+        recargaHoy();
+      } catch (e) {
+        alert("No he podido eliminar el patrimonio."); ok.disabled = false; ok.textContent = "Descargar copia y eliminar"; cerrar();
+      }
+    };
+  }
+  window.borrarPatrimonio = borrarPatrimonio;
+  { const cb = $("#borrarConfirmo"), ok = $("#borrarOk"); if (cb && ok) cb.onchange = () => { ok.disabled = !cb.checked; }; }
+
   /* ---------------------------------------------- arranque */
-  document.title = "Rumbo · " + (D.titular || "Mi patrimonio");
+  document.title = "Liberty · " + (D.titular || "Mi patrimonio");
   $("#marcaTexto").textContent = D.titular || "Mi patrimonio";
+  montaSelectorCarteras();
   $("#metaFecha").textContent = "Datos a " + G.fmtFecha(D.fechaExtracto);
 
-  $("#btnTema").onclick = () => { cambiaTema(); pintar(); };
+  _repinta = () => { try { pintar(); } catch (e) { /* al cambiar un ajuste */ } };
+  if ($("#btnImprimir")) $("#btnImprimir").onclick = () => window.print();
   if ($("#btnPrecios")) $("#btnPrecios").onclick = async () => {
     const b = $("#btnPrecios");
     b.disabled = true;
@@ -1112,7 +1718,7 @@
       const r = await fetch("api/actualizar", { method: "POST" });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error);
-      location.reload();
+      recargaHoy();
     } catch (e) {
       alert(e.message || "No he podido actualizar los precios. ¿Tienes conexión a internet?");
       b.disabled = false;
@@ -1120,17 +1726,29 @@
     }
   };
   if (location.protocol === "file:" && $("#btnPrecios")) $("#btnPrecios").hidden = true;
-  $("#btnVideo").onclick = () => {
-    document.body.classList.toggle("video");
-    $("#btnVideo").classList.toggle("act");
-    setTimeout(pintarTab, 60);
-  };
   document.querySelectorAll("#tabs button").forEach(b => { b.onclick = () => irA(b.dataset.tab); });
-  $("#mesSel").onchange = e => { estado.mes = +e.target.value; pintaMes(); };
-  $("#mesPrev").onclick = () => { estado.mes = Math.max(0, estado.mes - 1); pintaMes(); };
-  $("#mesNext").onclick = () => { estado.mes = Math.min(D.resumenMensual.length - 1, estado.mes + 1); pintaMes(); };
+  document.querySelectorAll("#subtabs button").forEach(b => { b.onclick = () => irVista(b.dataset.pv); });
+  function pasoPeriodo(d) {
+    const rm = D.resumenMensual || [];
+    if ((estado.periodo || "mes") === "anio") {
+      const anios = [...new Set(rm.map(x => x.mes.slice(0, 4)))];
+      let i = anios.indexOf(estado.anio) + d;
+      i = Math.max(0, Math.min(anios.length - 1, i));
+      estado.anio = anios[i];
+    } else {
+      estado.mes = Math.max(0, Math.min(rm.length - 1, (estado.mes || 0) + d));
+    }
+    pintaMes();
+  }
+  $("#mesSel").onchange = e => {
+    if ((estado.periodo || "mes") === "anio") estado.anio = e.target.value;
+    else estado.mes = +e.target.value;
+    pintaMes();
+  };
+  $("#mesPrev").onclick = () => pasoPeriodo(-1);
+  $("#mesNext").onclick = () => pasoPeriodo(1);
   ["rAnos", "rRent", "rApor"].forEach(id => $("#" + id).addEventListener("input", pintaProyeccion));
-  $("#rApor").value = Math.min(3000, Math.max(0, Math.round((D.total.ritmoMensual || 500) / 50) * 50));
+  $("#rApor").value = Math.min(3000, Math.max(0, Math.round(((D.total || {}).ritmoMensual || 500) / 50) * 50));
 
   document.addEventListener("keydown", e => {
     // Solo se ignoran los atajos mientras escribes en un campo. Si el guardia
@@ -1139,26 +1757,34 @@
     const t = e.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (e.key === "Escape" && filtrando()) { estado.ocultos.clear(); pintaPatrimonio(); }
-    if (e.key === "v" && !e.metaKey && !e.ctrlKey) $("#btnVideo").click();
-    if (e.key === "l" && !e.metaKey && !e.ctrlKey && estado.tab === "patrimonio") {
+    if (e.key === "v" && !e.metaKey && !e.ctrlKey) {
+      recuerda.guarda("patrimonio.video", document.body.classList.contains("video") ? "0" : "1");
+      aplicaPrefs(); pintaAjustes(); setTimeout(pintarTab, 60);
+    }
+    if (e.key === "l" && !e.metaKey && !e.ctrlKey && estado.tab === "panel") {
       estado.ocultos = filtrando() ? new Set() : new Set(idsCorto());
       pintaPatrimonio();
     }
-    const n = "123456".indexOf(e.key);
-    const tab = ["patrimonio", "mes", "fondos", "rendimiento", "datos", "ayuda"][n];
-    if (n >= 0 && document.getElementById("tab-" + tab)) irA(tab);
+    // Teclas 1-7: sub-pestañas del Panel.
+    const n = "1234567".indexOf(e.key);
+    const pv = ["patrimonio", "distribucion", "rentabilidad", "evolucion", "ingresos", "deudas", "fiscal"][n];
+    if (n >= 0 && document.getElementById("pv-" + pv)) { if (estado.tab !== "panel") irA("panel"); irVista(pv); }
   });
 
   let t = null;
   window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(pintarTab, 140); });
 
   const tabGuardada = recuerda.lee("patrimonio.tab");
-  if (tabGuardada && document.getElementById("tab-" + tabGuardada)) {
-    estado.tab = tabGuardada;
-    document.querySelectorAll("#tabs button").forEach(b =>
-      b.setAttribute("aria-selected", String(b.dataset.tab === estado.tab)));
-    document.querySelectorAll(".panel").forEach(p => { p.hidden = p.id !== "tab-" + estado.tab; });
-  }
+  estado.tab = ["panel", "datos", "ayuda", "ajustes"].includes(tabGuardada) ? tabGuardada : "panel";
+  // Preferencia «Pantalla de inicio»: siempre el Panel o la última que usaste.
+  if (pref("inicio", "ultima") === "panel") estado.tab = "panel";
+  const pvGuardada = recuerda.lee("patrimonio.pv");
+  if (pvGuardada && document.getElementById("pv-" + pvGuardada)) estado.pv = pvGuardada;
+  document.querySelectorAll("#tabs button").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.tab === estado.tab)));
+  document.querySelectorAll(".panel").forEach(p => { p.hidden = p.id !== "tab-" + estado.tab; });
+  document.querySelectorAll(".pv").forEach(el => { el.hidden = el.id !== "pv-" + estado.pv; });
+  if ($("#btnImprimir")) $("#btnImprimir").hidden = estado.tab !== "panel";
 
   try {
     pintar();
@@ -1177,4 +1803,5 @@
   }
   actualizaVivo();
   setInterval(actualizaVivo, 60000);
+  muestraBienvenida(false);
 })();

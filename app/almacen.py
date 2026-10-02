@@ -12,20 +12,30 @@ import os
 import re
 import unicodedata
 
-from .motor import TIPOS, FUENTES, num_es
+from .motor import FUENTES, TIPOS, num_es
 
 COPIAS_MAX = 20
 TIPOS_MOV = {"compra": "Compra", "venta": "Venta", "dividendo": "Dividendo o cupón",
              "comision": "Comisión"}
+TIPOS_FLUJO = {"ingreso": "Ingreso", "gasto": "Gasto"}   # flujo de caja del hogar (F3)
 SOLO_SALDO = ("efectivo", "deuda")   # tipos que se siguen solo con saldos anotados
 
 CARTERA_VACIA = {
     "version": 1, "titular": "Mi patrimonio",
     "productos": [], "movimientos": [], "valoraciones": [],
+    "titulares": [], "apartados": [], "flujos": [],
+    "config": {"colchon": 0, "categorias": [], "objetivos": {}, "monedas": [],
+               "umbralConcentracion": 0.4, "desviacionMax": 0.05, "diasAviso": 90,
+               "diasSinAnotar": 30},
     "comparador": [{"id": "real", "nombre": "Mi cartera real", "real": True}],
     "hitos": [10000, 25000, 50000, 100000, 250000, 500000, 1000000],
     "objetivo": {"activo": True, "importe": 100000, "etiqueta": "Próximo objetivo"},
 }
+
+# Por defecto solo el efectivo/las cuentas cuentan como «disponible» (liquidez
+# inmediata sin penalización). El resto se marca a mano en la ficha del producto.
+def disponible_defecto(tipo):
+    return tipo == "efectivo"
 
 
 class ErrorValidacion(Exception):
@@ -37,8 +47,16 @@ class ErrorValidacion(Exception):
 # ---------------------------------------------------------------- disco
 
 def carga(ruta):
-    with open(ruta, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # Fichero dañado (edición manual, disco lleno a mitad de escritura…).
+        # Mejor un error claro que un 500: hay copias automáticas en «copias/».
+        raise ErrorValidacion([
+            f"El archivo de datos está dañado y no se puede leer ({e}). "
+            "Puedes recuperar una copia de seguridad desde «Mis datos → Copias»."
+        ]) from e
 
 
 def guarda(ruta, cfg):
@@ -130,7 +148,7 @@ def texto(v, maximo=200):
 # ---------------------------------------------------------------- productos
 
 CAMPOS_TEXTO = ("nombre", "corto", "identificador", "codigo", "entidad", "clase", "gestora",
-                "tipoDetalle", "respaldo", "respaldoMoneda", "vivo", "papel")
+                "tipoDetalle", "respaldo", "respaldoMoneda", "vivo", "papel", "titular")
 
 
 def guarda_producto(cfg, datos):
@@ -156,14 +174,26 @@ def guarda_producto(cfg, datos):
     riesgo = numero(datos.get("riesgo"), "el nivel de riesgo", errores, obligatorio=False, minimo=1)
     if riesgo is not None and riesgo > 7:
         errores.append("El nivel de riesgo va de 1 a 7.")
+    # Campos de deuda (F2): la TAE se guarda como fracción, igual que el TER.
+    tae = numero(datos.get("tae"), "la TAE", errores, obligatorio=False, minimo=0)
+    cuota = numero(datos.get("cuota"), "la cuota mensual", errores, obligatorio=False, minimo=0)
+    capital = numero(datos.get("capitalInicial"), "el capital inicial", errores, obligatorio=False, minimo=0)
     if errores:
         raise ErrorValidacion(errores)
 
     nuevo.update(tipo=tipo, fuente=fuente, moneda=moneda,
                  largoPlazo=bool(datos.get("largoPlazo", True)),
+                 disponible=bool(datos.get("disponible", disponible_defecto(tipo))),
                  slot=int(datos["slot"]) if str(datos.get("slot") or "").isdigit() else None,
                  ter=ter / 100 if ter is not None else None,
-                 riesgo=int(riesgo) if riesgo is not None else None)
+                 riesgo=int(riesgo) if riesgo is not None else None,
+                 tae=tae / 100 if tae is not None else None,
+                 cuota=round(cuota, 2) if cuota is not None else None,
+                 capitalInicial=round(capital, 2) if capital is not None else None,
+                 fechaInicio=fecha_suave(datos.get("fechaInicio")),
+                 fechaVencimiento=fecha_suave(datos.get("fechaVencimiento")),
+                 fechaRevision=fecha_suave(datos.get("fechaRevision")),
+                 fechaCancelacion=fecha_suave(datos.get("fechaCancelacion")))
     if fuente == "manual":
         nuevo.update(codigo="", respaldo="", respaldoMoneda="")
     nuevo["corto"] = nuevo["corto"] or nuevo["nombre"][:24]
@@ -318,3 +348,172 @@ def borra_valoracion(cfg, vid):
     cfg["valoraciones"] = [v for v in cfg.get("valoraciones", []) if v.get("id") != vid]
     if len(cfg["valoraciones"]) == antes:
         raise ErrorValidacion(["Ese valor ya no existe."])
+
+
+# ---------------------------------------------------------------- apartados
+# Un apartado es dinero PROPIO reservado para un fin concreto (impuestos, obras,
+# fianzas que habrá que devolver…). NO es deuda y NO resta del patrimonio neto,
+# pero sí del «dinero libre para invertir».
+
+def guarda_apartado(cfg, datos):
+    errores = []
+    nombre = texto(datos.get("nombre"))
+    if not nombre:
+        errores.append("Ponle un nombre al apartado.")
+    importe = numero(datos.get("importe"), "el importe reservado", errores, minimo=0)
+    if errores:
+        raise ErrorValidacion(errores)
+    ap = {"nombre": nombre, "importe": round(importe, 2),
+          "finalidad": texto(datos.get("finalidad")),
+          "titular": texto(datos.get("titular")),
+          "fechaPrevista": fecha_suave(datos.get("fechaPrevista")),
+          "nota": texto(datos.get("nota"))}
+    lista = cfg.setdefault("apartados", [])
+    existente = next((a for a in lista if a.get("id") == datos.get("id")), None) if datos.get("id") else None
+    if existente:
+        aid = existente["id"]
+        existente.clear()
+        existente.update(id=aid, **{k: v for k, v in ap.items() if v not in ("", None)})
+        return existente
+    ap = {"id": siguiente_id(lista, "a"), **{k: v for k, v in ap.items() if v not in ("", None)}}
+    lista.append(ap)
+    return ap
+
+
+def borra_apartado(cfg, aid):
+    antes = len(cfg.get("apartados", []))
+    cfg["apartados"] = [a for a in cfg.get("apartados", []) if a.get("id") != aid]
+    if len(cfg["apartados"]) == antes:
+        raise ErrorValidacion(["Ese apartado ya no existe."])
+
+
+def fecha_suave(valor):
+    """Como fecha(), pero opcional: devuelve ISO o '' sin poner errores."""
+    try:
+        return dt.date.fromisoformat(str(valor or "")[:10]).isoformat()
+    except ValueError:
+        return ""
+
+
+# ---------------------------------------------------------------- configuración
+
+def guarda_config(cfg, datos):
+    """Ajusta los parámetros del hogar: colchón y lista de titulares."""
+    errores = []
+    conf = cfg.setdefault("config", {})
+    if "titular" in datos:   # renombrar la cartera activa
+        nombre = texto(datos.get("titular"), 60)
+        if nombre:
+            cfg["titular"] = nombre
+    if "objetivoImporte" in datos:   # meta de patrimonio (barra de progreso del panel)
+        imp = numero(datos.get("objetivoImporte"), "el objetivo de patrimonio", errores,
+                     obligatorio=False, minimo=0)
+        obj = cfg.setdefault("objetivo", {"activo": True, "importe": 100000, "etiqueta": "Próximo objetivo"})
+        if imp is not None and imp > 0:
+            obj["importe"] = round(imp, 2)
+            obj["activo"] = True
+        else:
+            obj["activo"] = False
+    if "colchon" in datos:
+        colchon = numero(datos.get("colchon"), "el colchón", errores, obligatorio=False, minimo=0)
+        conf["colchon"] = round(colchon, 2) if colchon is not None else 0
+    if "titulares" in datos:
+        vistos, limpios = set(), []
+        for t in datos.get("titulares") or []:
+            nombre = texto(t, 60)
+            if nombre and nombre.lower() not in vistos:
+                vistos.add(nombre.lower())
+                limpios.append(nombre)
+        cfg["titulares"] = limpios
+    # Control de asignación (F4). Los porcentajes llegan como % y se guardan como fracción.
+    if "umbralConcentracion" in datos:
+        u = numero(datos.get("umbralConcentracion"), "el umbral de concentración", errores, obligatorio=False, minimo=0)
+        conf["umbralConcentracion"] = round(u / 100, 4) if u is not None else 0.4
+    if "desviacionMax" in datos:
+        dv = numero(datos.get("desviacionMax"), "la desviación máxima", errores, obligatorio=False, minimo=0)
+        conf["desviacionMax"] = round(dv / 100, 4) if dv is not None else 0.05
+    if "diasAviso" in datos:
+        da = numero(datos.get("diasAviso"), "los días de aviso", errores, obligatorio=False, minimo=0)
+        conf["diasAviso"] = int(da) if da is not None else 90
+    if "diasSinAnotar" in datos:
+        ds = numero(datos.get("diasSinAnotar"), "los días sin anotar", errores, obligatorio=False, minimo=0)
+        conf["diasSinAnotar"] = int(ds) if ds is not None else 30
+    if "asistenteOculto" in datos:
+        conf["asistenteOculto"] = bool(datos.get("asistenteOculto"))
+    if "buscarActualizaciones" in datos:
+        conf["buscarActualizaciones"] = bool(datos.get("buscarActualizaciones"))
+    if "objetivos" in datos:
+        objs = {}
+        for clave, val in (datos.get("objetivos") or {}).items():
+            if clave in TIPOS:
+                x = numero(val, "el objetivo", errores, obligatorio=False, minimo=0)
+                if x is not None:   # permite fijar un objetivo explícito del 0 %
+                    objs[clave] = round(x / 100, 4)
+        conf["objetivos"] = objs
+    if "monedas" in datos:
+        # Tipo de cambio manual: cuántos euros vale 1 unidad de cada moneda (F5).
+        monedas, vistos = [], set()
+        for it in datos.get("monedas") or []:
+            cod = texto((it or {}).get("codigo"), 3)
+            cod = cod if cod in ("GBp", "GBX") else cod.upper()
+            if not re.fullmatch(r"[A-Z]{3}|GBp|GBX", cod) or cod == "EUR" or cod in vistos:
+                continue
+            tipo = numero((it or {}).get("tipo"), f"el tipo de cambio de {cod}", errores, mayor_que=0)
+            if tipo is not None:
+                vistos.add(cod)
+                monedas.append({"codigo": cod, "tipo": round(tipo, 6)})
+        conf["monedas"] = monedas
+    if "categorias" in datos:
+        # Lista maestra de categorías de ingresos/gastos (F3+, como el Excel).
+        cats, vistos = [], set()
+        for it in datos.get("categorias") or []:
+            nombre = texto((it or {}).get("nombre"), 40)
+            tipo = (it or {}).get("tipo")
+            if nombre and tipo in TIPOS_FLUJO and nombre.lower() not in vistos:
+                vistos.add(nombre.lower())
+                cat = {"nombre": nombre, "tipo": tipo}
+                pres = numero((it or {}).get("presupuesto"), "el presupuesto", errores,
+                              obligatorio=False, minimo=0)
+                if pres:
+                    cat["presupuesto"] = round(pres, 2)
+                cats.append(cat)
+        conf["categorias"] = cats
+    if errores:
+        raise ErrorValidacion(errores)
+    return {"config": conf, "titulares": cfg.get("titulares", [])}
+
+
+# ---------------------------------------------------------------- flujos (ingresos/gastos)
+
+def guarda_flujo(cfg, datos):
+    """Registra un ingreso o un gasto del hogar (flujo de caja, F3)."""
+    errores = []
+    tipo = datos.get("tipo")
+    if tipo not in TIPOS_FLUJO:
+        errores.append("Elige si es un ingreso o un gasto.")
+    f = fecha(datos.get("fecha"), errores)
+    importe = numero(datos.get("importe"), "el importe", errores, mayor_que=0)
+    if errores:
+        raise ErrorValidacion(errores)
+    fl = {"fecha": f, "tipo": tipo, "importe": round(importe, 2),
+          "categoria": texto(datos.get("categoria")), "titular": texto(datos.get("titular")),
+          "nota": texto(datos.get("nota"))}
+    lista = cfg.setdefault("flujos", [])
+    existente = next((x for x in lista if x.get("id") == datos.get("id")), None) if datos.get("id") else None
+    if existente:
+        fid = existente["id"]
+        existente.clear()
+        existente.update(id=fid, **{k: v for k, v in fl.items() if v not in ("", None)})
+        lista.sort(key=lambda x: x["fecha"])
+        return existente
+    fl = {"id": siguiente_id(lista, "f"), **{k: v for k, v in fl.items() if v not in ("", None)}}
+    lista.append(fl)
+    lista.sort(key=lambda x: x["fecha"])
+    return fl
+
+
+def borra_flujo(cfg, fid):
+    antes = len(cfg.get("flujos", []))
+    cfg["flujos"] = [x for x in cfg.get("flujos", []) if x.get("id") != fid]
+    if len(cfg["flujos"]) == antes:
+        raise ErrorValidacion(["Ese apunte ya no existe."])

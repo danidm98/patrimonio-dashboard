@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rumbo</title>
+<title>Liberty</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="icono-32.png">
 <link rel="apple-touch-icon" href="icono-180.png">
@@ -71,6 +71,23 @@ code{background:var(--sup2);padding:1px 6px;border-radius:5px;font-size:.9em}
 }
 .tabs button:hover{color:var(--tinta)}
 .tabs button[aria-selected="true"]{color:var(--tinta);border-bottom-color:var(--s1)}
+/* Barra superior (secciones grandes): un poco más grande y con más aire. */
+.tabsPrin{gap:4px}
+.tabsPrin button{font-size:15.5px;padding:12px 20px 13px}
+/* Sub-pestañas del Panel: píldoras grandes y claras, con la activa rellena. */
+.subtabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 10px}
+.subtabs button{border:1px solid var(--borde);background:var(--sup);color:var(--tinta2);
+  font:inherit;font-size:14px;font-weight:600;padding:9px 16px;border-radius:999px;cursor:pointer;transition:.13s}
+.subtabs button:hover{color:var(--tinta);border-color:var(--tinta3)}
+.subtabs button[aria-selected="true"]{background:var(--s1);border-color:var(--s1);color:#fff}
+.pv[hidden]{display:none}
+/* Línea-guía en lenguaje llano al inicio de cada vista. */
+.ayudaVista{color:var(--tinta2);font-size:13.5px;margin:4px 0 16px;line-height:1.5}
+/* Iconito de ayuda (ⓘ): muestra su explicación con el tooltip nativo al pasar el ratón. */
+.info{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+  border-radius:50%;border:1px solid var(--borde);color:var(--tinta3);font-size:11px;font-weight:700;
+  cursor:help;margin-left:6px;vertical-align:middle;user-select:none}
+.info:hover,.info:focus{color:var(--tinta);border-color:var(--tinta3);background:var(--sup2);outline:none}
 .panel[hidden]{display:none}
 
 /* ============================ hero ============================ */
@@ -89,6 +106,40 @@ code{background:var(--sup2);padding:1px 6px;border-radius:5px;font-size:.9em}
 @keyframes lat{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
 .pos{color:var(--bien)} .neg{color:var(--mal)}
 .fuerte{font-weight:650;color:var(--tinta)}
+.selCartera{font:inherit;font-size:14px;font-weight:600;color:var(--tinta);background:var(--sup);
+  border:1px solid var(--borde);border-radius:8px;padding:5px 8px;cursor:pointer;max-width:220px}
+.selCartera:hover{border-color:var(--tinta3)}
+/* Accesibilidad: texto más grande (C4). Escala toda la interfaz. */
+body.textoGrande{zoom:1.15}
+body.textoMuyGrande{zoom:1.3}
+/* Vista amplia: filas y controles más grandes, más fáciles de ver y tocar. */
+body.vistaAmplia .btn{height:44px}
+body.vistaAmplia #tabs button{padding:14px 20px}
+body.vistaAmplia .kpi{padding:16px 18px}
+body.vistaAmplia .dt td,body.vistaAmplia .dt th{padding-top:12px;padding-bottom:12px}
+body.vistaAmplia .segm button{padding:10px 16px}
+/* Zona de Ajustes */
+.ajusteFila{display:flex;justify-content:space-between;align-items:center;gap:14px 24px;padding:16px 0;border-bottom:1px solid var(--borde);flex-wrap:wrap}
+.ajusteFila:last-child{border-bottom:0}
+.ajusteTxt b{font-size:15px}
+.ajusteTxt small{display:block;color:var(--tinta3);font-size:12.5px;margin-top:3px;max-width:52ch}
+@media(max-width:640px){
+  .topFila{flex-wrap:wrap;row-gap:6px}
+  .tabsPrin button{font-size:14.5px;padding:10px 13px 11px}
+  .subtabs button{font-size:13px;padding:8px 13px}
+}
+.asistente .pasosAsist{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:16px}
+.asistente .pasosAsist li{line-height:1.55}
+.asistente .pasosAsist .botones{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+.btnLink{border:0;background:transparent;color:var(--s1);font:inherit;font-size:inherit;cursor:pointer;text-decoration:underline;padding:0}
+.filtroTitular{margin:12px 0 0}
+.filtroTitular:empty{display:none}
+.filtroTitular label{font-size:13px;color:var(--tinta2);margin-right:8px}
+.filtroTitular select{font:inherit;font-size:14px;font-weight:600;padding:6px 10px;border:1px solid var(--borde);border-radius:8px;background:var(--sup);color:var(--tinta);cursor:pointer}
+.bannerAlertas{margin:14px 0 0;display:flex;flex-direction:column;gap:6px}
+.bannerAlertas:empty{display:none}
+.avisoLinea{background:var(--sup);border:1px solid var(--borde);border-radius:9px;padding:9px 12px;font-size:13px}
+.avisoLinea b{display:inline-block;min-width:20px;font-variant-numeric:tabular-nums}
 
 .prog{margin-top:26px;max-width:760px}
 .progBarra{height:9px;border-radius:99px;background:var(--sup2);overflow:hidden;border:1px solid var(--borde)}
@@ -115,6 +166,9 @@ code{background:var(--sup2);padding:1px 6px;border-radius:5px;font-size:.9em}
 
 /* ============================ controles ============================ */
 .segm{display:inline-flex;background:var(--sup2);border:1px solid var(--borde);border-radius:9px;padding:2px}
+/* Mis datos: tres grupos de pestañas al mismo nivel, separados visualmente. */
+.edVistas{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.edVistas .edGrupo{flex-wrap:wrap}
 .segm button{
   border:0;background:transparent;color:var(--tinta3);font:inherit;font-size:12.5px;
   padding:5px 11px;border-radius:7px;cursor:pointer;transition:.13s;white-space:nowrap;
@@ -308,7 +362,7 @@ body.video .topFila,body.video #seccionTabla,body.video .pie,body.video #seccion
 [hidden]{display:none !important}
 .btn.prim{background:var(--s1);border-color:transparent;color:#fff;font-weight:600}
 .btn.prim:hover{filter:brightness(1.1);color:#fff;background:var(--s1)}
-body.sinDatos #tabs button:not([data-tab="datos"]):not([data-tab="ayuda"]),body.sinDatos #btnPrecios,body.sinDatos #metaFecha{display:none}
+body.sinDatos #tabs button:not([data-tab="datos"]):not([data-tab="ayuda"]):not([data-tab="ajustes"]),body.sinDatos #btnPrecios,body.sinDatos #metaFecha{display:none}
 
 /* ---- Mis datos ---- */
 .sp{flex:1}
@@ -338,6 +392,23 @@ table.dt td.nota{max-width:220px;overflow:hidden;text-overflow:ellipsis;text-ali
 .modal[open]{animation:entra .18s ease-out}
 @keyframes entra{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
 .modal::backdrop{background:rgba(6,6,6,.55);backdrop-filter:blur(4px)}
+/* Card de bienvenida (primera vez) */
+.bvCuerpo{overflow-y:auto;max-height:calc(100vh - 34px);padding:26px 28px 22px;line-height:1.55}
+.bvCuerpo h2{font-size:21px}
+.bvCuerpo p{margin:10px 0}
+.bvCuerpo ul{margin:8px 0;padding-left:20px}
+.bvCuerpo li{margin:7px 0}
+.bvCabecera{display:flex;align-items:center;gap:16px;margin-bottom:6px}
+.bvIcono{border-radius:16px;flex-shrink:0}
+.bvAutor{margin:4px 0 0;color:var(--tinta2);font-size:14px}
+.bvAviso{background:var(--fondo);border:1px solid var(--borde);border-left:4px solid #c98500;border-radius:10px;padding:12px 14px;font-size:13px;color:var(--tinta2)}
+.bvBotones{display:flex;justify-content:flex-end;margin-top:16px}
+.bvBotones .btn{height:44px;padding:0 20px}
+.btn.danger{background:#c0392b;border-color:#c0392b;color:#fff}
+.btn.danger:hover:not(:disabled){background:#a93226;border-color:#a93226}
+.btn.danger:disabled{opacity:.5;cursor:not-allowed}
+.zonaPeligro{border:1.5px solid #c0392b !important;box-shadow:0 0 0 3px rgba(192,57,43,.12)}
+.zonaPeligro h2{color:#c0392b}
 .mForm{display:flex;flex-direction:column;max-height:calc(100vh - 34px)}
 .mForm > header{display:flex;align-items:center;gap:12px;padding:22px 26px 8px}
 .mForm > header h2{font-size:19px;font-weight:700;letter-spacing:-.025em;flex:1;margin:0}
@@ -592,6 +663,7 @@ body.video .tarjeta{padding:22px 24px}
 .banner a,.pie a{color:var(--s1);text-decoration:none;font-weight:600}
 .banner a:hover,.pie a:hover{text-decoration:underline}
 .creditoCanal{display:block;margin-top:6px}
+.ayudaSub{margin:18px 0 2px;font-size:14.5px;color:var(--tinta)}
 .tarjetaCanal{position:fixed;right:22px;bottom:22px;z-index:50;width:340px;max-width:calc(100vw - 32px);
   background:var(--sup);border:1px solid var(--borde);border-radius:16px;padding:16px 18px 14px;
   box-shadow:0 18px 50px rgba(0,0,0,.28);animation:subeCanal .35s ease-out}
@@ -610,6 +682,27 @@ body.video .tarjetaCanal{display:none}
 .marca .marcaSep{width:1px;height:15px;background:var(--borde)}
 .marca #marcaTexto{font-weight:500;color:var(--tinta2);font-size:13.5px}
 @media(max-width:720px){.marca .marcaSep,.marca #marcaTexto{display:none}}
+/* ---- Mes de referencia (ver un mes pasado) ---- */
+.mesRef{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:8px 0}
+.mesRef:empty{display:none}
+.mesRef.activo{background:var(--sup);border:1px solid var(--sup2,var(--borde));border-left:4px solid var(--s1);border-radius:10px;padding:10px 14px}
+.mesRef .avisoHasta{color:var(--tinta)}
+.mesRef .mesRefCtrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mesRef label{font-size:13px;color:var(--tinta2)}
+@media print{.mesRefCtrl{display:none !important}}
+/* ---- Impresión / PDF: solo el panel, sin botones ni navegación ---- */
+@media print{
+  :root{--fondo:#fff;--sup:#fff;--tinta:#000;--tinta2:#222;--tinta3:#555;--borde:#ccc}
+  body{background:#fff;color:#000;zoom:1}
+  .topFila,.tabsPrin,#subtabs,#btnPrecios,#btnImprimir,
+  .tarjetaCanal,#bannerDemo,#bannerVersion,#filtroTitular,.aviso-legal,
+  #selFiscalCont,.mesRefCtrl,#tab-datos,#tab-ayuda,#tab-ajustes{display:none !important}
+  .pv,.panel{display:block !important}
+  .pv[hidden]{display:none !important}
+  section,.tarjeta,.card,table{break-inside:avoid}
+  .env{max-width:none;margin:0;padding:0}
+  a[href]:after{content:""}
+}
 </style>
 </head>
 <body>
@@ -617,73 +710,85 @@ body.video .tarjetaCanal{display:none}
 <div class="top">
   <div class="env">
     <div class="topFila">
-      <div class="marca"><img class="logoIcono" src="icono-64.png" alt="" width="24" height="24"><span class="nombreApp">Rumbo</span><span class="marcaSep"></span><span id="marcaTexto">Mi patrimonio</span></div>
+      <div class="marca"><img class="logoIcono" src="icono-64.png" alt="" width="24" height="24"><span class="nombreApp">Liberty</span><span class="marcaSep"></span><span id="marcaTexto">Mi patrimonio</span><select id="selCartera" class="selCartera" aria-label="Elegir o crear patrimonio" hidden></select></div>
       <div class="sep"></div>
       <span class="meta" id="metaFecha"></span>
       <button class="btn" id="btnPrecios" title="Descarga los precios de hoy de cada producto">↻ Actualizar precios</button>
-      <button class="btn" id="btnTema" title="Cambiar entre claro y oscuro">◐ Tema</button>
-      <button class="btn" id="btnVideo" title="Oculta los controles y agranda las cifras">▶ Modo vídeo</button>
+      <button class="btn" id="btnImprimir" title="Imprimir esta vista o guardarla como PDF (elige «Guardar como PDF» en el destino)">🖨 Imprimir</button>
     </div>
-    <nav class="tabs" id="tabs" role="tablist">
-      <button data-tab="patrimonio" role="tab" aria-selected="true">Patrimonio</button>
-      <button data-tab="mes" role="tab" aria-selected="false">El mes</button>
-      <button data-tab="fondos" role="tab" aria-selected="false">Productos</button>
-      <button data-tab="rendimiento" role="tab" aria-selected="false">Rendimiento</button>
-      <button data-tab="datos" role="tab" aria-selected="false">Mis datos</button>
-      <button data-tab="ayuda" role="tab" aria-selected="false">Ayuda</button>
+    <nav class="tabs tabsPrin" id="tabs" role="tablist">
+      <button data-tab="panel" role="tab" aria-selected="true">📊 Panel</button>
+      <button data-tab="datos" role="tab" aria-selected="false">✏️ Mis datos</button>
+      <button data-tab="ayuda" role="tab" aria-selected="false">❓ Ayuda</button>
+      <button data-tab="ajustes" role="tab" aria-selected="false">⚙️ Ajustes</button>
     </nav>
   </div>
 </div>
 
 <div class="env">
 
-<div class="banner" id="bannerVersion" hidden><span id="bannerVersionTexto"></span></div>
 <div class="banner" id="bannerDemo" hidden>
   <span><b>Estás viendo una cartera de ejemplo:</b> es la cartera real de <span class="autorCanal"></span>,
   que cada mes cuenta cómo evoluciona en su <a class="enlaceCanal" target="_blank" rel="noopener">canal de YouTube</a>.
-  No es una recomendación de inversión.</span>
+  No es una recomendación de inversión.
+  <small style="display:block;margin-top:6px;color:var(--tinta3)">Este ejemplo y este texto provienen de la aplicación original (Rumbo) que forké; no reflejan cómo está montada ni para qué sirve esta versión, que es un gestor de patrimonio de hogar.</small></span>
   <button class="btn prim" id="btnEmpezar">Empezar con mis datos</button>
 </div>
 <p class="aviso-legal">Herramienta informativa. No es asesoramiento financiero. No se garantiza la exactitud de los datos ni de los precios.</p>
 
-<!-- ==================================================== PATRIMONIO -->
-<div class="panel" id="tab-patrimonio" role="tabpanel">
+<!-- ==================================================== PANEL -->
+<div class="panel" id="tab-panel" role="tabpanel">
 
-  <section class="hero">
-    <div class="hEtq" id="heroEtq">Patrimonio neto</div>
-    <div class="hCifra" id="heroCifra">—</div>
-    <div class="hSub" id="heroSub"></div>
-    <div class="prog" id="progEnv" hidden>
-      <div class="progBarra"><div class="progRelleno" id="progRelleno" style="width:0"></div></div>
-      <div class="progPie"><span id="progIzq"></span><span id="progDer"></span></div>
-    </div>
-  </section>
+  <nav class="subtabs" id="subtabs" role="tablist">
+    <button data-pv="patrimonio" aria-selected="true">Patrimonio</button>
+    <button data-pv="distribucion" aria-selected="false">Distribución</button>
+    <button data-pv="rentabilidad" aria-selected="false">Rentabilidad</button>
+    <button data-pv="evolucion" aria-selected="false">Evolución</button>
+    <button data-pv="ingresos" aria-selected="false">Ingresos y gastos</button>
+    <button data-pv="deudas" aria-selected="false">Deudas y vencimientos</button>
+    <button data-pv="fiscal" aria-selected="false">Informe fiscal</button>
+  </nav>
 
-  <p class="kpisNota subt" id="kpisNota"></p>
-  <div class="kpis" id="kpis"></div>
+  <div id="filtroTitular" class="filtroTitular"></div>
+  <div id="mesReferencia" class="mesRef"></div>
+  <div id="bannerAlertas" class="bannerAlertas"></div>
 
-  <section class="tarjeta">
-    <header>
-      <h2>Evolución del patrimonio</h2>
-      <span class="subt" id="evolNota"></span>
-      <div class="sep"></div>
-      <div class="segm" id="segRango"></div>
-      <div class="segm" id="segVista"></div>
-    </header>
-    <div class="filtros" id="filtros"></div>
-    <div class="envGraf" id="grafPrincipal"></div>
-  </section>
+  <!-- ===== PATRIMONIO ===== -->
+  <div class="pv" id="pv-patrimonio">
+    <section class="hero">
+      <div class="hEtq" id="heroEtq">Patrimonio neto</div>
+      <div class="hCifra" id="heroCifra">—</div>
+      <div class="hSub" id="heroSub"></div>
+      <div class="prog" id="progEnv" hidden>
+        <div class="progBarra"><div class="progRelleno" id="progRelleno" style="width:0"></div></div>
+        <div class="progPie"><span id="progIzq"></span><span id="progDer"></span></div>
+      </div>
+    </section>
+    <p class="ayudaVista">Tu foto de hoy: cuánto tienes, cuánto debes y cuánto te queda libre para invertir.</p>
+    <p class="kpisNota subt" id="kpisNota"></p>
+    <div class="kpis" id="kpis"></div>
+    <section class="tarjeta" id="tarjetaHogar" style="margin-top:16px" hidden>
+      <header>
+        <h2>Patrimonio del hogar</h2>
+        <span class="subt" id="hogarSub">Foto de hoy: qué tienes, qué debes y cuánto queda libre</span>
+      </header>
+      <div class="kpis" id="hogarGrid"></div>
+      <div id="hogarVariacion" style="margin-top:16px"></div>
+      <div id="hogarTitular" style="margin-top:16px"></div>
+    </section>
+  </div>
 
-  <section style="margin-top:26px">
-    <header style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
-      <h2 style="font-size:15px">Componentes de la cartera</h2>
-      <span class="subt">Pulsa uno para abrir su ficha completa</span>
-    </header>
-    <div class="chips" id="chips"></div>
-  </section>
-
-  <div class="rejilla2">
-    <section class="tarjeta">
+  <!-- ===== DISTRIBUCIÓN ===== -->
+  <div class="pv" id="pv-distribucion" hidden>
+    <p class="ayudaVista">En qué está repartido tu dinero: por tipo, por dónde lo tienes y a quién le corresponde. Pulsa un componente para ver su ficha.</p>
+    <section style="margin-top:8px">
+      <header style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
+        <h2 style="font-size:15px">Componentes de la cartera</h2>
+        <span class="subt">Pulsa uno para abrir su ficha completa</span>
+      </header>
+      <div class="chips" id="chips"></div>
+    </section>
+    <section class="tarjeta" style="margin-top:16px">
       <header>
         <h2>Distribución</h2>
         <div class="sep"></div>
@@ -692,126 +797,244 @@ body.video .tarjetaCanal{display:none}
       <div class="envGraf" id="grafDonut"></div>
       <table class="leyenda" id="leyendaDist" style="margin-top:14px"></table>
     </section>
-    <section class="tarjeta">
-      <header><h2>Aportaciones por mes</h2><span class="subt" id="notaAport"></span></header>
-      <div class="envGraf" id="grafBarras"></div>
+    <section class="tarjeta" id="tarjetaAsignacion" style="margin-top:16px" hidden>
+      <header><h2>Asignación objetivo</h2><span class="subt" id="asigSub"></span></header>
+      <div class="tablaEnv"><table class="dt" id="asigTabla"></table></div>
+      <div id="asigRebal"></div>
     </section>
   </div>
 
-  <section class="tarjeta" style="margin-top:16px">
-    <header><h2>Hitos</h2><span class="subt">La primera vez que el patrimonio cruzó cada cifra</span></header>
-    <div class="hitos" id="hitos"></div>
-  </section>
+  <!-- ===== PRODUCTO (detalle, se abre desde Distribución) ===== -->
+  <div class="pv" id="pv-producto" hidden>
+    <div class="selFondo" id="selFondo" style="margin-top:8px"></div>
+    <section class="tarjeta" id="fondoFicha"></section>
+    <section class="tarjeta" id="fondoExpo" hidden></section>
+    <section class="tarjeta" id="fondoTabla"></section>
+  </div>
 
-  <section class="tarjeta" id="seccionProyeccion" style="margin-top:16px">
-    <header>
-      <h2>Si sigo así…</h2>
-      <span class="subt">Proyección orientativa: rentabilidad constante, sin impuestos ni inflación</span>
-    </header>
-    <div class="mandos">
-      <div class="mando"><label>Años <b id="vAnos">15</b></label><input type="range" id="rAnos" min="1" max="40" value="15"></div>
-      <div class="mando"><label>Rentabilidad anual <b id="vRent">7 %</b></label><input type="range" id="rRent" min="0" max="15" step="0.5" value="7"></div>
-      <div class="mando"><label>Aportación mensual <b id="vApor">—</b></label><input type="range" id="rApor" min="0" max="3000" step="50" value="500"></div>
-    </div>
-    <div class="envGraf" id="grafProy"></div>
-    <div class="hSub" id="proyResumen" style="margin-top:14px"></div>
-  </section>
+  <!-- ===== RENTABILIDAD ===== -->
+  <div class="pv" id="pv-rentabilidad" hidden>
+    <p class="ayudaVista">Cuánto ganan tus inversiones: ganancia, TIR (rentabilidad real de tu dinero), por año y comparado con un indexado.</p>
+    <section class="tarjeta" style="margin-top:8px">
+      <header><h2>Rentabilidad por año natural</h2><span class="subt" id="notaAnual"></span></header>
+      <div class="envGraf" id="grafAnual"></div>
+      <div class="filaTabla">
+        <span class="subt" id="notaTablaAnual"></span>
+      </div>
+      <div class="tablaEnv"><table class="dt" id="tablaAnual"></table></div>
+    </section>
+    <section class="tarjeta" id="seccionComparar">
+      <header>
+        <h2>¿Y si lo hubieras metido todo en un indexado?</h2>
+        <span class="subt">Las mismas compras y ventas que tú, en las mismas fechas, pero en otra cartera</span>
+        <span class="sp"></span>
+        <div class="segm" id="compRef"></div>
+      </header>
+      <div class="compTitular" id="compTitular"></div>
+      <div class="envGraf" id="grafComparacion"></div>
+      <p class="subt" id="compNota" style="margin:10px 0 0"></p>
+      <details class="compDetalles" id="compDetalles">
+        <summary>Ver más detalles: volatilidad, Sharpe y caídas</summary>
+        <p class="subt" id="notaComparador" style="margin:12px 0 0"></p>
+        <div class="envGraf" id="grafComparador"></div>
+        <div class="tablaEnv" style="margin-top:16px"><table class="dt" id="tablaComparador"></table></div>
+        <p class="subt" id="notaRiesgo" style="margin:14px 0 0"></p>
+      </details>
+    </section>
+    <section class="tarjeta">
+      <header><h2>Lo que pagas en comisiones</h2><span class="subt" id="notaComisiones"></span></header>
+      <div class="tablaEnv"><table class="dt" id="tablaComisiones"></table></div>
+    </section>
+    <section class="tarjeta" id="seccionProyeccion" style="margin-top:16px">
+      <header>
+        <h2>Si sigo así…</h2>
+        <span class="subt">Proyección orientativa: rentabilidad constante, sin impuestos ni inflación</span>
+      </header>
+      <div class="mandos">
+        <div class="mando"><label>Años <b id="vAnos">15</b></label><input type="range" id="rAnos" min="1" max="40" value="15"></div>
+        <div class="mando"><label>Rentabilidad anual <b id="vRent">7 %</b></label><input type="range" id="rRent" min="0" max="15" step="0.5" value="7"></div>
+        <div class="mando"><label>Aportación mensual <b id="vApor">—</b></label><input type="range" id="rApor" min="0" max="3000" step="50" value="500"></div>
+      </div>
+      <div class="envGraf" id="grafProy"></div>
+      <div class="hSub" id="proyResumen" style="margin-top:14px"></div>
+    </section>
+    <section class="tarjeta" id="seccionTabla" style="margin-top:16px">
+      <header>
+        <h2>Todas las aportaciones</h2>
+        <span class="subt" id="notaTabla"></span>
+        <div class="sep"></div>
+        <div class="segm" id="segTabla"></div>
+      </header>
+      <div class="tablaEnv alto"><table class="dt" id="tablaMov"></table></div>
+    </section>
+  </div>
 
-  <section class="tarjeta" id="seccionTabla" style="margin-top:16px">
-    <header>
-      <h2>Todas las aportaciones</h2>
-      <span class="subt" id="notaTabla"></span>
-      <div class="sep"></div>
-      <div class="segm" id="segTabla"></div>
-    </header>
-    <div class="tablaEnv alto"><table class="dt" id="tablaMov"></table></div>
-  </section>
-</div>
+  <!-- ===== EVOLUCIÓN (incluye el mes a mes) ===== -->
+  <div class="pv" id="pv-evolucion" hidden>
+    <p class="ayudaVista">Cómo cambia tu patrimonio en el tiempo y qué pasó cada mes.</p>
+    <section class="tarjeta" style="margin-top:8px">
+      <header>
+        <h2>Evolución del patrimonio</h2>
+        <span class="subt" id="evolNota"></span>
+        <div class="sep"></div>
+        <div class="segm" id="segRango"></div>
+        <div class="segm" id="segVista"></div>
+      </header>
+      <div class="filtros" id="filtros"></div>
+      <div class="envGraf" id="grafPrincipal"></div>
+    </section>
+    <section class="tarjeta" id="tarjetaDeudaEvol" style="margin-top:16px" hidden>
+      <header><h2>Patrimonio neto y deudas</h2><span class="subt">Cómo evolucionan en el tiempo</span></header>
+      <div class="envGraf" id="grafDeuda"></div>
+    </section>
+    <section class="tarjeta" style="margin-top:16px">
+      <header><h2>Aportaciones por mes</h2><span class="subt" id="notaAport"></span></header>
+      <div class="envGraf" id="grafBarras"></div>
+    </section>
+    <section class="tarjeta" style="margin-top:16px">
+      <header><h2>Hitos</h2><span class="subt">La primera vez que el patrimonio cruzó cada cifra</span></header>
+      <div class="hitos" id="hitos"></div>
+    </section>
+    <section class="hero" style="padding-bottom:0;margin-top:20px">
+      <div class="mesBarra">
+        <div class="segm" id="segPeriodo"></div>
+        <button class="btn" id="mesPrev" title="Anterior">‹</button>
+        <select id="mesSel" aria-label="Elegir mes o año"></select>
+        <button class="btn" id="mesNext" title="Siguiente">›</button>
+        <div class="sep"></div>
+        <span class="subt" id="mesNota"></span>
+      </div>
+      <div class="hEtq" id="mesEtq">Cambio del mes</div>
+      <div class="hCifra" id="mesCifra">—</div>
+      <div class="hSub" id="mesSub"></div>
+    </section>
+    <div class="mesTarjetas" id="mesTarjetas"></div>
+    <section class="tarjeta">
+      <header><h2>Qué ha hecho cada componente</h2><span class="subt" id="mesTablaNota"></span></header>
+      <div class="tablaEnv"><table class="dt" id="mesTabla"></table></div>
+    </section>
+    <section class="tarjeta">
+      <header>
+        <h2>Tu esfuerzo y el del mercado, mes a mes</h2>
+        <span class="subt">Lo que aportaste tú, y encima lo que puso o quitó el mercado.</span>
+      </header>
+      <div class="envGraf" id="grafMesHist"></div>
+    </section>
+  </div>
 
-<!-- ==================================================== EL MES -->
-<div class="panel" id="tab-mes" role="tabpanel" hidden>
-  <section class="hero" style="padding-bottom:0">
-    <div class="mesBarra">
-      <button class="btn" id="mesPrev" title="Mes anterior">‹</button>
-      <select id="mesSel" aria-label="Elegir mes"></select>
-      <button class="btn" id="mesNext" title="Mes siguiente">›</button>
-      <div class="sep"></div>
-      <span class="subt" id="mesNota"></span>
-    </div>
-    <div class="hEtq" id="mesEtq">Cambio del mes</div>
-    <div class="hCifra" id="mesCifra">—</div>
-    <div class="hSub" id="mesSub"></div>
-  </section>
+  <!-- ===== INGRESOS Y GASTOS ===== -->
+  <div class="pv" id="pv-ingresos" hidden>
+    <p class="ayudaVista">El día a día del hogar: lo que entra, lo que sale y cuánto ahorras.</p>
+    <section class="tarjeta" id="tarjetaFlujos" style="margin-top:8px">
+      <header><h2>Ingresos, gastos y ahorro</h2><span class="subt" id="flujosSub"></span></header>
+      <div class="kpis" id="flujosKpis"></div>
+      <div class="envGraf" id="grafFlujosEvol" style="margin-top:14px"></div>
+      <div class="tablaEnv" style="margin-top:14px"><table class="dt" id="flujosTabla"></table></div>
+      <div id="flujosCatEnv" style="margin-top:20px"></div>
+      <p class="subt" id="flujosVacio" hidden style="margin-top:12px">Todavía no has anotado ingresos ni gastos. Ve a «Mis datos → Ingresos y gastos» para empezar.</p>
+    </section>
+  </div>
 
-  <div class="mesTarjetas" id="mesTarjetas"></div>
+  <!-- ===== DEUDAS Y VENCIMIENTOS ===== -->
+  <div class="pv" id="pv-deudas" hidden>
+    <p class="ayudaVista">Lo que debes y las fechas que conviene vigilar (depósitos, promociones y deudas).</p>
+    <section class="tarjeta" id="tarjetaDeudas" style="margin-top:8px" hidden>
+      <header><h2>Deudas</h2><span class="subt">Lo que debes, su coste y cuánto te apalancas</span></header>
+      <div class="kpis" id="deudasKpis"></div>
+      <div class="tablaEnv" id="deudasTablaEnv" style="margin-top:14px"><table class="dt" id="deudasTabla"></table></div>
+    </section>
+    <section class="tarjeta" id="tarjetaVenc" style="margin-top:16px" hidden>
+      <header><h2>Vencimientos</h2><span class="subt">Depósitos, promociones y deudas por fecha</span></header>
+      <div class="tablaEnv"><table class="dt" id="vencTabla"></table></div>
+    </section>
+    <p class="subt" id="deudasVacio" hidden>No tienes deudas ni vencimientos registrados. Puedes añadirlos en «Mis datos → Deudas».</p>
+  </div>
 
-  <section class="tarjeta">
-    <header><h2>Qué ha hecho cada componente</h2><span class="subt" id="mesTablaNota"></span></header>
-    <div class="tablaEnv"><table class="dt" id="mesTabla"></table></div>
-  </section>
+  <div class="pv" id="pv-fiscal" hidden>
+    <p class="ayudaVista">Resumen para la declaración de la renta (IRPF): ganancias y pérdidas de tus ventas
+      (con coste FIFO, como las calcula Hacienda) y los dividendos y cupones cobrados. Elige el año y pulsa «🖨 Imprimir» arriba.</p>
+    <div class="selAnioFiscal" id="selFiscalCont" style="margin:4px 0 12px"></div>
+    <section class="tarjeta" id="tarjetaFiscal">
+      <header>
+        <h2 id="fiscalTitulo">Informe fiscal</h2>
+        <span class="subt" id="fiscalSub">Datos para tu declaración</span>
+      </header>
+      <div id="fiscalContenido"></div>
+    </section>
+    <p class="aviso-legal" style="margin-top:12px;font-size:12px;color:var(--tinta3)">Este resumen es orientativo y se calcula con los datos que has anotado (importes en la moneda en que los introdujiste). No sustituye el asesoramiento fiscal ni los certificados de tu banco o bróker; contrástalo con ellos antes de declarar.</p>
+  </div>
 
-  <section class="tarjeta">
-    <header>
-      <h2>Tu esfuerzo y el del mercado, mes a mes</h2>
-      <span class="subt">Lo que aportaste tú, y encima lo que puso o quitó el mercado.</span>
-    </header>
-    <div class="envGraf" id="grafMesHist"></div>
-  </section>
-</div>
-
-<!-- ==================================================== FONDOS -->
-<div class="panel" id="tab-fondos" role="tabpanel" hidden>
-  <div class="selFondo" id="selFondo" style="margin-top:24px"></div>
-  <section class="tarjeta" id="fondoFicha"></section>
-  <section class="tarjeta" id="fondoExpo" hidden></section>
-  <section class="tarjeta" id="fondoTabla"></section>
-</div>
-
-<!-- ==================================================== RENDIMIENTO -->
-<div class="panel" id="tab-rendimiento" role="tabpanel" hidden>
-  <section class="tarjeta" style="margin-top:24px">
-    <header><h2>Rentabilidad por año natural</h2><span class="subt" id="notaAnual"></span></header>
-    <div class="envGraf" id="grafAnual"></div>
-    <div class="filaTabla">
-      <span class="subt" id="notaTablaAnual"></span>
-    </div>
-    <div class="tablaEnv"><table class="dt" id="tablaAnual"></table></div>
-  </section>
-
-  <section class="tarjeta" id="seccionComparar">
-    <header>
-      <h2>¿Y si lo hubieras metido todo en un indexado?</h2>
-      <span class="subt">Las mismas compras y ventas que tú, en las mismas fechas, pero en otra cartera</span>
-      <span class="sp"></span>
-      <div class="segm" id="compRef"></div>
-    </header>
-    <div class="compTitular" id="compTitular"></div>
-    <div class="envGraf" id="grafComparacion"></div>
-    <p class="subt" id="compNota" style="margin:10px 0 0"></p>
-    <details class="compDetalles" id="compDetalles">
-      <summary>Ver más detalles: volatilidad, Sharpe y caídas</summary>
-      <p class="subt" id="notaComparador" style="margin:12px 0 0"></p>
-      <div class="envGraf" id="grafComparador"></div>
-      <div class="tablaEnv" style="margin-top:16px"><table class="dt" id="tablaComparador"></table></div>
-      <p class="subt" id="notaRiesgo" style="margin:14px 0 0"></p>
-    </details>
-  </section>
-
-  <section class="tarjeta">
-    <header><h2>Lo que pagas en comisiones</h2><span class="subt" id="notaComisiones"></span></header>
-    <div class="tablaEnv"><table class="dt" id="tablaComisiones"></table></div>
-  </section>
 </div>
 
 <div class="panel" id="tab-datos" role="tabpanel" hidden><div id="editor"></div></div>
 
 <div class="panel" id="tab-ayuda" role="tabpanel" hidden>
-  <section class="tarjeta ayudaTarjeta ayudaVideo">
-    <div><b>¿Prefieres verlo en vídeo?</b>
-      <p>En el canal de <span class="autorCanal"></span> tienes el tutorial paso a paso: instalación, cómo meter
-      tus datos y cómo sacarle partido.</p></div>
-    <div class="botones"><a class="btn prim" id="ayudaTutorial" target="_blank" rel="noopener">▶ Ver el tutorial</a>
-      <a class="btn enlaceSuscribir" target="_blank" rel="noopener">Suscribirme</a></div>
+  <div class="banner" id="bannerVersion" hidden><span id="bannerVersionTexto"></span></div>
+  <div style="margin:4px 0 2px"><button class="btn" id="btnVerBienvenida">👋 Ver la presentación de bienvenida</button></div>
+  <section class="tarjeta ayudaTarjeta">
+    <header><h2>De dónde viene esta aplicación</h2><span class="subt">Gracias a Dani Dominguez Quant</span></header>
+    <p>Esta herramienta nace de <b>Rumbo</b>, la aplicación que creó <span class="autorCanal"></span> para seguir una cartera
+      de inversión y que explica paso a paso en su <a class="enlaceCanal" target="_blank" rel="noopener">canal de YouTube</a>.
+      Toda la base —el motor de cálculo, los gráficos y la estructura— es suyo, y es un trabajo excelente.
+      <b>Gracias, Dani, por crearlo y compartirlo en abierto.</b></p>
+    <div class="botones" style="display:flex;gap:8px;margin-top:12px">
+      <a class="btn enlaceCanal" target="_blank" rel="noopener">▶ Ver su canal</a>
+      <a class="btn" href="https://github.com/danidm98/rumbo" target="_blank" rel="noopener">Proyecto original en GitHub</a>
+    </div>
+  </section>
+
+  <section class="tarjeta ayudaTarjeta">
+    <header><h2>Qué he añadido yo</h2><span class="subt">De gestor de inversión a gestor del patrimonio del hogar</span></header>
+    <p>Partiendo de Rumbo, <b>Alonso</b> (<a href="https://github.com/AlonsoVine/rumboExito" target="_blank" rel="noopener">github.com/AlonsoVine</a>)
+      he transformado la aplicación para gestionar <b>todo el patrimonio de un hogar</b>, no solo las inversiones. Han sido muchos
+      cambios; si vienes de la aplicación original, esto es lo que cambia:</p>
+
+    <p class="ayudaSub"><b>El patrimonio completo (no solo inversiones)</b></p>
+    <ul>
+      <li><b>Todo lo que tienes y lo que debes</b>: cuentas, efectivo, inmuebles, planes de pensiones y <b>deudas</b> (hipotecas, préstamos), con <b>patrimonio bruto y neto</b>.</li>
+      <li><b>Varios titulares</b>: a quién pertenece cada cosa (tú, común, otra persona…) y cuánto corresponde a cada uno.</li>
+      <li><b>Disponible vs. no disponible</b>, <b>apartados</b> (dinero reservado), <b>colchón</b> de liquidez y el <b>«dinero libre para invertir»</b>.</li>
+      <li><b>Ingresos y gastos</b> con categorías y <b>presupuestos</b>, y tasa de ahorro.</li>
+      <li><b>Deudas</b> con cuota, intereses estimados, ratio deuda/activos y fechas de revisión.</li>
+    </ul>
+
+    <p class="ayudaSub"><b>Análisis y control</b></p>
+    <ul>
+      <li><b>Objetivos de asignación</b> por tipo, <b>concentración</b> por tipo y entidad, y <b>alertas</b> automáticas.</li>
+      <li><b>Vencimientos</b> de depósitos, promociones, revisiones de deuda y apartados.</li>
+      <li><b>«Cómo ha cambiado»</b>: comparación con hace 1 mes y hace 12 meses.</li>
+      <li><b>Ver el panel de un mes pasado</b> (cómo estaba tu patrimonio a fin de cualquier mes).</li>
+      <li><b>Informe fiscal</b> anual para la renta (ganancias y pérdidas por FIFO y dividendos/cupones), <b>listo para imprimir</b>.</li>
+      <li><b>Multidivisa</b>, y la base que ya traía Rumbo: precios automáticos, TIR/XIRR, FIFO y comparador con índices.</li>
+    </ul>
+
+    <p class="ayudaSub"><b>Pensada para que sea fácil (también para personas mayores)</b></p>
+    <ul>
+      <li><b>Navegación sencilla de dos niveles</b> y explicaciones con iconos <b>ⓘ</b> donde hace falta.</li>
+      <li>Zona de <b>⚙️ Ajustes</b> con <b>tamaño de texto</b> (hasta muy grande), <b>tema</b> claro/oscuro/automático, <b>vista amplia</b> (controles grandes), <b>modo vídeo</b> y <b>ocultar importes</b>.</li>
+      <li><b>Imprimir o guardar en PDF</b> el panel y el informe fiscal.</li>
+      <li>Mensajes claros, estados vacíos explicados y confirmaciones.</li>
+    </ul>
+
+    <p class="ayudaSub"><b>Tus datos, tuyos</b></p>
+    <ul>
+      <li><b>Aplicación de escritorio</b>: un <b>único ejecutable</b> (<code>Liberty.exe</code>), sin instalar nada; al moverlo crea su propia carpeta de datos al lado.</li>
+      <li><b>Varias carteras</b> y <b>copias de seguridad automáticas</b> cada vez que cambias algo.</li>
+      <li><b>Importar</b> desde CSV/bróker y <b>exportar</b> el panel como página web para compartir.</li>
+      <li><b>100 % local y privado</b>, sin cuentas ni servidores; con repaso de seguridad (anti-XSS, CSP) y el chequeo de versión <b>apagado por defecto</b>.</li>
+    </ul>
+    <p style="color:var(--tinta3);font-size:13px;margin-top:6px">Y por dentro: motor de cálculo revisado, validaciones, pruebas automáticas y decisiones de diseño documentadas.</p>
+  </section>
+
+  <section class="tarjeta ayudaTarjeta" style="border-left:4px solid var(--s1)">
+    <header><h2>¿Te resulta útil esta versión?</h2><span class="subt">Si te sirve el gestor de patrimonio, me encantará que me sigas</span></header>
+    <p>Si esta versión (el gestor de patrimonio del hogar) te está siendo útil, puedes ver en qué más trabajo y seguirme aquí:</p>
+    <div class="botones" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <a class="btn prim" href="https://alonsovine.github.io/portfolioR/" target="_blank" rel="noopener">🌐 Ver mi portfolio</a>
+      <a class="btn" href="https://www.linkedin.com/in/alonso-vi%C3%B1%C3%A9-barrancos/" target="_blank" rel="noopener">💼 Seguirme en LinkedIn</a>
+      <a class="btn" href="https://github.com/AlonsoVine" target="_blank" rel="noopener">Seguirme en GitHub</a>
+    </div>
+    <p style="color:var(--tinta3);font-size:13px;margin-top:10px">¡Gracias por usarla!</p>
   </section>
 
   <section class="tarjeta ayudaTarjeta">
@@ -823,7 +1046,7 @@ body.video .tarjetaCanal{display:none}
         <li><b>Busca por ISIN</b> (12 caracteres, como <code>IE00BYX5NX33</code>). Lo tienes en la ficha del producto en tu banco. Es la forma más fiable, sobre todo para fondos.</li>
         <li>Para acciones y ETF, prueba el <b>ticker con la bolsa</b>: <code>SAN.MC</code> (Madrid), <code>IWDA.AS</code> (Ámsterdam), <code>EUNL.DE</code> (Xetra), <code>AAPL</code> (EE. UU.).</li>
         <li>Para criptomonedas, escribe su nombre en inglés (<code>bitcoin</code>, <code>ethereum</code>).</li>
-        <li>Si no cotiza en ningún sitio (un plan de pensiones, un depósito, oro físico, un piso), créalo igualmente y elige <b>«Valor anotado a mano»</b> como fuente del precio. Luego anota su valor de vez en cuando en «Saldos y valores».</li>
+        <li>Si no cotiza en ningún sitio (un plan de pensiones, un depósito, oro físico, un piso), créalo igualmente y elige <b>«Valor anotado a mano»</b> como fuente del precio. Luego anota su valor de vez en cuando en «Saldos y movimientos».</li>
       </ol></div></details>
 
     <details class="faq"><summary>El valor no coincide con el que veo en mi banco</summary><div>
@@ -840,12 +1063,13 @@ body.video .tarjetaCanal{display:none}
       <p>La app actualiza los precios al abrirse si tienen más de 6 horas, y cuando pulsas <b>«↻ Actualizar precios»</b>. Si una fuente no responde, usa el último precio guardado y te avisa.</p></div></details>
 
     <details class="faq"><summary>¿Mis datos salen de mi ordenador?</summary><div>
-      <p>No. Todo se guarda en la carpeta <code>mis_datos</code>, dentro de la carpeta de la app. No hay cuentas, ni servidores, ni nadie más que los vea. La app solo sale a internet para descargar precios, y en esas consultas no va ningún dato tuyo.</p></div></details>
+      <p>No. Todo se guarda en la carpeta <code>mis_datos</code>, dentro de la carpeta de la app. No hay cuentas, ni servidores, ni nadie más que los vea. La app solo sale a internet para descargar precios, y en esas consultas no va ningún dato tuyo.</p>
+      <p>Hay dos excepciones opcionales: <b>buscar actualizaciones</b> (consulta a GitHub si hay versión nueva) viene <b>apagado</b> y lo puedes encender en <b>Mis datos → Configuración → Privacidad</b>; y el <b>precio del Bitcoin en vivo</b>, que solo se consulta si configuras una criptomoneda con precio «en vivo». Ninguna de las dos envía datos tuyos.</p></div></details>
 
     <details class="faq"><summary>¿Cómo meto mi cuenta del banco, un plan de pensiones o un piso?</summary><div>
       <ol>
-        <li>En <b>Mis datos → Productos</b>, añade el producto. Para una cuenta elige el tipo «Cuenta / efectivo»; para lo demás, la fuente «Valor anotado a mano».</li>
-        <li>En <b>Saldos y valores</b>, anota su valor con la fecha. Una vez al mes basta: con <b>«Anotar todos de una vez»</b> lo haces en un minuto.</li>
+        <li>En <b>Mis datos → Activos</b>, añade el producto. Para una cuenta elige el tipo «Cuenta / efectivo»; para lo demás, la fuente «Valor anotado a mano».</li>
+        <li>En <b>Saldos y movimientos</b>, anota su valor con la fecha. Una vez al mes basta: con <b>«Cierre del mes»</b> lo haces en un minuto.</li>
         <li>Si sabes cuánto llevas aportado (por ejemplo, a un plan de pensiones), anótalo también: así el panel calcula su rentabilidad.</li>
       </ol></div></details>
 
@@ -853,7 +1077,7 @@ body.video .tarjetaCanal{display:none}
       <p>La <b>rentabilidad</b> compara lo que vale tu cartera con lo que has metido, sin mirar cuándo lo metiste. La <b>TIR</b> (tasa interna de rentabilidad) sí tiene en cuenta cuándo entró y salió cada euro, y lo expresa como un porcentaje anual. Si aportas poco a poco, la TIR es la cifra honesta para compararte con un depósito o con un índice.</p></div></details>
 
     <details class="faq"><summary>He borrado o cambiado algo sin querer</summary><div>
-      <p>Antes de cada cambio, la app guarda una copia automática (las últimas 20). Ve a <b>Mis datos → Copias y web</b> y pulsa <b>«Recuperar»</b> en la copia de antes del error.</p></div></details>
+      <p>Antes de cada cambio, la app guarda una copia automática (las últimas 20). Ve a <b>Mis datos → Copias y seguridad</b> y pulsa <b>«Recuperar»</b> en la copia de antes del error.</p></div></details>
 
     <details class="faq"><summary>¿Cómo actualizo a una versión nueva sin perder mis datos?</summary><div>
       <ol>
@@ -862,10 +1086,10 @@ body.video .tarjetaCanal{display:none}
         <li>Copia tu carpeta <code>mis_datos</code> de la versión antigua a la nueva (o copia todo lo nuevo encima de lo viejo, menos <code>mis_datos</code>).</li>
         <li>Abre la app con «Iniciar» como siempre.</li>
       </ol>
-      <p>Por si acaso, antes descarga una copia en <b>Mis datos → Copias y web</b>.</p></div></details>
+      <p>Por si acaso, antes descarga una copia en <b>Mis datos → Copias y seguridad</b>.</p></div></details>
 
     <details class="faq"><summary>¿Cómo lo paso a otro ordenador?</summary><div>
-      <p>En el ordenador viejo, <b>Mis datos → Copias y web → Descargar copia</b>. En el nuevo, instala la app, ábrela y, en ese mismo sitio, sube el archivo con <b>«Recuperar desde un archivo»</b>. También vale copiar la carpeta <code>mis_datos</code> entera.</p></div></details>
+      <p>En el ordenador viejo, <b>Mis datos → Copias y seguridad → Descargar copia</b>. En el nuevo, instala la app, ábrela y, en ese mismo sitio, sube el archivo con <b>«Recuperar desde un archivo»</b>. También vale copiar la carpeta <code>mis_datos</code> entera.</p></div></details>
 
     <details class="faq"><summary>Windows o Mac me dicen que el archivo puede ser peligroso</summary><div>
       <p>Pasa con cualquier archivo descargado de internet que no viene de una tienda de apps. <code>Iniciar.bat</code> e <code>Iniciar.command</code> son texto plano: puedes abrirlos con el Bloc de notas o TextEdit y leer todo lo que hacen.</p>
@@ -874,31 +1098,175 @@ body.video .tarjetaCanal{display:none}
         <li><b>Mac</b>: la primera vez, clic derecho sobre <code>Iniciar.command</code> → «Abrir» → «Abrir».</li>
       </ul></div></details>
 
-    <p class="ayudaPie" id="ayudaVersion">¿Otra duda? Mira la página del proyecto en GitHub.</p>
+    <details class="faq"><summary>¿Cómo está organizada la app ahora?</summary><div>
+      <p>Arriba hay solo tres botones grandes:</p>
+      <ul>
+        <li><b>📊 Panel</b>: mirar tus números. Dentro tiene pestañas: <b>Patrimonio</b> (tu foto de hoy),
+          <b>Distribución</b> (en qué está el dinero), <b>Rentabilidad</b> (cuánto gana), <b>Evolución</b>
+          (cómo cambia en el tiempo y el mes a mes), <b>Ingresos y gastos</b> y <b>Deudas y vencimientos</b>.</li>
+        <li><b>✏️ Mis datos</b>: lo que escribes tú. Dentro: Activos, Deudas, Apartados, Ingresos y gastos,
+          Saldos y movimientos, Configuración, Importar y Copias y seguridad.</li>
+        <li><b>❓ Ayuda</b>: esto.</li>
+      </ul></div></details>
+
+    <details class="faq"><summary>¿Puedo tener varias carteras y cambiar entre ellas?</summary><div>
+      <p>Sí. Arriba, junto al nombre de la app, hay un desplegable con tus carteras. Elige <b>«＋ Nueva cartera…»</b>,
+      ponle un nombre y se crea vacía. Cada cartera guarda sus propios productos, saldos y copias. Para cambiar de una
+      a otra, elígela en ese mismo desplegable.</p></div></details>
+
+    <details class="faq"><summary>¿Cómo le cambio el nombre a una cartera?</summary><div>
+      <p>En <b>Mis datos → Configuración</b>, campo <b>«Nombre de esta cartera»</b>. El nombre nuevo aparece
+      arriba, en el selector de carteras.</p></div></details>
+
+    <details class="faq"><summary>¿Para qué sirven los titulares?</summary><div>
+      <p>Son las personas del hogar (por ejemplo, Mar, Antonio y «Común»). Se definen en <b>Configuración</b> y
+      luego asignas cada producto, deuda o apartado a un titular. El patrimonio sigue siendo uno solo, pero puedes
+      ver cuánto le corresponde a cada uno (Panel → Patrimonio).</p></div></details>
+
+    <details class="faq"><summary>¿Qué es «disponible» y el «dinero libre para invertir»?</summary><div>
+      <p><b>Disponible</b> es el dinero que puedes usar ya, sin penalización (cuentas, efectivo). Lo marcas en la
+      ficha de cada producto. El <b>dinero libre para invertir</b> = disponible − apartados − colchón: lo que te
+      queda de verdad para meter en inversiones.</p></div></details>
+
+    <details class="faq"><summary>¿Qué son los apartados y el colchón?</summary><div>
+      <p>Un <b>apartado</b> es dinero tuyo reservado para un fin concreto (impuestos, obras, una fianza que
+      devolverás…): no resta de tu patrimonio, pero sí del dinero libre. El <b>colchón</b> es la liquidez mínima que
+      quieres mantener siempre. Ambos se configuran en <b>Mis datos</b> (Apartados y Configuración).</p></div></details>
+
+    <details class="faq"><summary>Patrimonio bruto y patrimonio neto, ¿en qué se diferencian?</summary><div>
+      <p><b>Bruto</b> = todo lo que tienes (activos). <b>Neto</b> = bruto − deudas. En el Panel → Patrimonio ves los dos.</p></div></details>
+
+    <details class="faq"><summary>¿Cómo registro una deuda (hipoteca, préstamo, tarjeta)?</summary><div>
+      <p>En <b>Mis datos → Deudas → «+ Añadir deuda»</b>: pon el capital inicial, la TAE, la cuota y las fechas.
+      Cada mes anota el capital que queda por pagar en <b>Saldos y movimientos</b>. La app calcula los intereses
+      estimados y los ratios deuda/activos y cuota/ingresos.</p></div></details>
+
+    <details class="faq"><summary>¿Cómo llevo los ingresos y gastos del hogar?</summary><div>
+      <p>En <b>Mis datos → Ingresos y gastos</b> anotas nóminas, alquileres, gastos… por categoría. En el Panel
+      verás ingresos, gastos, ahorro y <b>tasa de ahorro</b> por mes, año y media de 12 meses. Las categorías las
+      defines en <b>Configuración</b> (cada una como ingreso o gasto).</p></div></details>
+
+    <details class="faq"><summary>¿Qué son los objetivos de asignación y la concentración?</summary><div>
+      <p>En <b>Configuración</b> puedes fijar un <b>objetivo (%)</b> por tipo de activo (deberían sumar 100 %). El
+      Panel te dice si estás sobre o infraponderado respecto a ese objetivo, y te avisa de <b>concentración</b>
+      cuando un tipo o una entidad supera el umbral que elijas.</p></div></details>
+
+    <details class="faq"><summary>¿Y los vencimientos?</summary><div>
+      <p>Si pones fecha de vencimiento a un depósito, promoción o deuda, aparecen en <b>Panel → Deudas y
+      vencimientos</b> ordenados por fecha, con los días que faltan y un aviso cuando están cerca (el plazo se
+      ajusta en Configuración).</p></div></details>
+
+    <details class="faq"><summary>Tengo algo en otra moneda (dólares, libras). ¿Cómo lo pongo?</summary><div>
+      <p>En <b>Configuración</b>, apartado <b>Monedas</b>, añade el código y cuántos euros vale 1 unidad
+      (por ejemplo, <code>USD 0,92</code>). Luego, en la ficha del producto elige esa moneda y anota sus saldos en
+      esa divisa: la app los pasa a euros. Es un tipo de cambio único (aproximado).</p></div></details>
+
+    <details class="faq"><summary>¿Cómo cambio la meta de patrimonio (la barra de progreso)?</summary><div>
+      <p>En <b>Configuración</b>, campo <b>«Objetivo de patrimonio»</b>. Pon la cifra que quieras (no tiene por qué
+      ser 100.000 €); déjalo vacío si no quieres una meta.</p></div></details>
+
+    <details class="faq"><summary>¿Puedo buscar y ordenar en las tablas de Mis datos?</summary><div>
+      <p>Sí. Cada tabla tiene un buscador arriba y puedes <b>ordenar pulsando en el título de una columna</b>
+      (aparece ▲ o ▼ según el sentido). Vuelve a pulsar para invertir el orden.</p></div></details>
+
+    <details class="faq"><summary>¿Para qué sirve «Repartir colores»?</summary><div>
+      <p>En <b>Mis datos → Activos</b>, da a cada activo un color distinto (útil cuando tienes muchos y se repiten).
+      El cambio se ve en los gráficos del panel.</p></div></details>
+
+    <details class="faq"><summary>Se me ve pequeño. ¿Puedo agrandar el texto? ¿Hay atajos de teclado?</summary><div>
+      <p>En la pestaña <b>«⚙️ Ajustes»</b> (arriba, a la derecha de «Ayuda») puedes cambiar el <b>tamaño del texto</b>,
+      el <b>tema</b> (claro, oscuro o automático), la <b>vista amplia</b>, <b>ocultar los importes</b> y el <b>modo vídeo</b>. Todo se recuerda para la próxima vez.</p>
+      <p>Atajos de teclado (cuando no estás escribiendo en un campo):</p>
+      <ul>
+        <li><b>1…7</b>: cambian de pestaña dentro del Panel (Patrimonio, Distribución, Rentabilidad, Evolución, Ingresos y gastos, Deudas y vencimientos, Informe fiscal).</li>
+        <li><b>V</b>: modo vídeo. <b>L</b>: ver solo lo de largo plazo. <b>Esc</b>: quitar el filtro.</li>
+      </ul></div></details>
+
+    <div class="ayudaPie">
+      <p id="ayudaVersion">¿Otra duda? Mira la <a href="https://github.com/danidm98/rumbo" target="_blank" rel="noopener">página del proyecto original en GitHub</a>.</p>
+      <p>Esta versión (gestor de patrimonio de hogar) es un fork modificado: <a href="https://github.com/AlonsoVine/rumboExito" target="_blank" rel="noopener">github.com/AlonsoVine/rumboExito</a>.</p>
+      <p class="creditoMod">Rumbo, de Dani Dominguez Quant · modificaciones (gestor de patrimonio de hogar) por Alonso (github.com/AlonsoVine).</p>
+      <p class="creditoCanal">Herramienta gratuita hecha por <span class="autorCanal"></span> · ¿Te resulta útil? <a class="enlaceSuscribir" target="_blank" rel="noopener">Suscríbete al canal ▶</a></p>
+    </div>
   </section>
+
 </div><!-- /ayuda -->
+
+<div class="panel" id="tab-ajustes" role="tabpanel" hidden>
+  <section class="tarjeta">
+    <header>
+      <h2>Ajustes</h2>
+      <span class="subt">Cómo se ve la aplicación. Se guarda en este navegador; no afecta a tus datos.</span>
+    </header>
+    <div id="ajustesCont" class="ajustes"></div>
+  </section>
+</div>
 
   <div class="avisos" id="avisos"></div>
   <footer class="pie" id="pie"></footer>
 </div>
 
+<dialog class="modal" id="bienvenida">
+  <div class="bvCuerpo">
+    <div class="bvCabecera">
+      <img src="icono-180.png" alt="Liberty" width="72" height="72" class="bvIcono">
+      <div>
+        <h2 style="margin:0">Te damos la bienvenida a Liberty</h2>
+        <p class="bvAutor">Un gestor del <b>patrimonio del hogar</b>, hecho por <b>Alonso Viñé</b>.</p>
+      </div>
+    </div>
+
+    <p><b>¿Para qué sirve?</b> Liberty reúne en un solo sitio <b>todo tu patrimonio</b>: lo que tienes
+      (cuentas, efectivo, inversiones, inmuebles, planes de pensiones) y lo que debes (hipotecas, préstamos),
+      de quién es cada cosa, y cómo evoluciona mes a mes. Todo se guarda <b>en tu propio ordenador</b>: sin
+      cuentas, sin registros y sin que tus datos salgan de aquí.</p>
+
+    <p><b>Las pestañas, de un vistazo:</b></p>
+    <ul>
+      <li><b>📊 Panel</b> — la foto de tu patrimonio y los análisis. Dentro tiene vistas: <i>Patrimonio,
+        Distribución, Rentabilidad, Evolución, Ingresos y gastos, Deudas y vencimientos</i> e <i>Informe fiscal</i>.
+        Arriba puedes incluso ver cómo estaba tu patrimonio <i>a fin de un mes pasado</i>.</li>
+      <li><b>✏️ Mis datos</b> — donde <b>añades y editas</b> tus activos, deudas, apartados, ingresos y gastos
+        y saldos; también la configuración, importar y las copias de seguridad.</li>
+      <li><b>❓ Ayuda</b> — dudas frecuentes y explicaciones (y aquí puedes volver a abrir esta presentación).</li>
+      <li><b>⚙️ Ajustes</b> — cómo se ve la app: <b>tamaño del texto</b>, tema claro/oscuro, <b>vista amplia</b>,
+        ocultar importes… pensado para que sea cómoda a cualquier edad.</li>
+    </ul>
+
+    <p style="color:var(--tinta2)">Consejo: empieza en <b>✏️ Mis datos</b> añadiendo tus cuentas y productos;
+      el <b>📊 Panel</b> se irá llenando solo.</p>
+
+    <p class="bvAviso"><b>Importante.</b> Esto <b>no es asesoramiento financiero ni una recomendación de
+      inversión</b>. Es una herramienta informativa que calcula con los datos que tú anotas; <b>puede contener
+      errores</b> y está <b>en revisión y mejora continua</b>. No se garantiza la exactitud de los datos ni de
+      los precios. Contrasta siempre con tu banco, bróker o asesor antes de tomar decisiones.</p>
+
+    <div class="bvBotones"><button class="btn prim" id="bvCerrar" autofocus>Empezar</button></div>
+  </div>
+</dialog>
+<dialog class="modal" id="dlgBorrarCartera">
+  <div class="bvCuerpo">
+    <div class="bvCabecera"><span style="font-size:38px;line-height:1">🗑️</span>
+      <div>
+        <h2 style="margin:0">Eliminar este patrimonio</h2>
+        <p class="bvAutor">Vas a borrar «<b id="borrarNombre"></b>».</p>
+      </div>
+    </div>
+    <p class="bvAviso"><b>Atención: esta acción es permanente.</b> Se borrarán <b>todos los datos</b> de este patrimonio
+      (productos, deudas, apartados, ingresos y gastos, saldos y movimientos). <b>No se puede deshacer</b>: la única
+      forma de recuperarlos sería a partir de una copia que hayas descargado (el <i>.json</i> de «Copias de seguridad»
+      o tus exportaciones/CSV).</p>
+    <p>Para tu tranquilidad, al confirmar <b>se descargará primero una copia (.json)</b> de este patrimonio.</p>
+    <label class="interruptor" style="margin-top:4px"><input type="checkbox" id="borrarConfirmo"><span class="pista"></span>
+      <span>Entiendo que esta acción es <b>permanente</b> y no tiene vuelta atrás.</span></label>
+    <div class="bvBotones" style="gap:10px">
+      <button class="btn" id="borrarCancelar">Cancelar</button>
+      <button class="btn danger" id="borrarOk" disabled>Descargar copia y eliminar</button>
+    </div>
+  </div>
+</dialog>
 <dialog class="modal" id="modal"></dialog>
 
-<script>
-/* Carga los scripts con un sello temporal para que, al recargar despues de
-   actualizar, el navegador no sirva los datos viejos de su cache.
-   async=false conserva el orden de ejecucion. */
-(function () {
-  // Con file:// no se puede anadir "?v=": algunos navegadores no encuentran
-  // el archivo. Ahi basta con la revalidacion por fecha de modificacion.
-  var sello = location.protocol === "file:" ? "" : "?v=" + Date.now();
-  ["datos.js", "canal.js", "graficos.js", "app.js", "editor.js"].forEach(function (archivo) {
-    var s = document.createElement("script");
-    s.src = archivo + sello;
-    s.async = false;
-    document.body.appendChild(s);
-  });
-})();
-</script>
+<script src="cargador.js"></script>
 </body>
 </html>

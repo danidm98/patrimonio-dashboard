@@ -10,6 +10,8 @@ panel: series diarias, aportado, plusvalias, TIR, rentabilidad por ano...
 Lo llama el servidor (servidor.py); no hace falta ejecutarlo a mano.
 """
 
+import calendar
+import datetime as dt
 import json
 import math
 import os
@@ -17,7 +19,6 @@ import re
 import sys
 import urllib.parse
 import urllib.request
-import datetime as dt
 from collections import defaultdict
 
 try:
@@ -117,7 +118,7 @@ def descargar_serie(simbolo, anos=None):
         res = bruto["chart"]["result"][0]
         cierres = res["indicators"]["quote"][0].get("close", [])
         nuevo = {}
-        for ts, c in zip(res.get("timestamp", []), cierres):
+        for ts, c in zip(res.get("timestamp", []), cierres, strict=False):
             if c is not None:
                 nuevo[dt.date.fromtimestamp(ts).isoformat()] = float(c)
         if nuevo:
@@ -259,7 +260,7 @@ def a_euros(serie, serie_fx):
 def lee_cache(ruta):
     if os.path.exists(ruta):
         try:
-            with open(ruta, "r", encoding="utf-8") as f:
+            with open(ruta, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -499,11 +500,16 @@ def aplicar_movimientos(p, movs):
                 lotes[0] = [lu - toma, lc - parte, ref]
                 if lotes[0][0] <= 1e-9:
                     lotes.pop(0)
+            vendidas_u = u - quedan   # unidades realmente vendidas (puede ser < u)
+            # Si se venden más unidades de las que hay, se cobra solo la parte
+            # proporcional a lo vendido; usar el importe completo contra un coste
+            # parcial inflaría la plusvalía realizada y la TIR.
+            cobrado = imp * vendidas_u / u if u else imp
             if quedan > 1e-6:
                 aviso(f"{p['corto']}: el {f} vendes más unidades de las que tienes. Revisa sus movimientos.")
-            realizado += imp - coste
-            eventos.append((f, -(u - quedan), -coste))
-            flujos.append((f, imp))
+            realizado += cobrado - coste
+            eventos.append((f, -vendidas_u, -coste))
+            flujos.append((f, cobrado))
         elif t == "dividendo":
             realizado += imp
             flujos.append((f, imp))
@@ -513,6 +519,82 @@ def aplicar_movimientos(p, movs):
             flujos.append((f, -imp))
     return {"eventos": eventos, "flujos": flujos, "realizado": realizado, "comisiones": comisiones,
             "vendidas": vendidas}
+
+
+def detalle_fiscal(cfg):
+    """Datos para la declaración de la renta (IRPF), por año:
+      - ganancias/pérdidas patrimoniales de cada venta, con coste FIFO (valor de
+        adquisición) y valor de transmisión, como las pide Hacienda;
+      - rendimientos del capital mobiliario (dividendos y cupones cobrados).
+    Importes en la moneda en que se anotaron los movimientos (normalmente euros).
+    Devuelve {anio: {ventas, rendimientos, totales}}.
+    """
+    por_prod = defaultdict(list)
+    for m in cfg.get("movimientos", []):
+        por_prod[m.get("producto")].append(m)
+    nombres = {p["id"]: (p.get("corto") or p.get("nombre") or p["id"]) for p in cfg.get("productos", [])}
+    anios = defaultdict(lambda: {"ventas": [], "rendimientos": []})
+
+    for pid, movs in por_prod.items():
+        lotes = []   # cada lote: [unidades, coste, fecha_compra]
+        for m in sorted(movs, key=lambda x: (x["fecha"], ORDEN_TIPO.get(x.get("tipo"), 9))):
+            t, f = m.get("tipo"), m["fecha"]
+            anio = str(f)[:4]
+            u, imp = float(m.get("unidades") or 0), float(m.get("importe") or 0)
+            if t == "compra":
+                lotes.append([u, imp, f])
+            elif t == "venta":
+                quedan, coste, fechas_adq = u, 0.0, []
+                while quedan > 1e-9 and lotes:
+                    lu, lc, lf = lotes[0]
+                    toma = min(lu, quedan)
+                    coste += lc * toma / lu if lu else 0.0
+                    quedan -= toma
+                    fechas_adq.append(lf)
+                    lotes[0] = [lu - toma, lc - (lc * toma / lu if lu else 0.0), lf]
+                    if lotes[0][0] <= 1e-9:
+                        lotes.pop(0)
+                # Para la declaración se reporta la venta COMPLETA (transmisión = importe
+                # íntegro, que ya incluye la comisión por convención de la app). Si faltan
+                # compras registradas (vendes más de lo que consta comprado), el coste de
+                # esas unidades es desconocido: la ganancia sale conservadora y se marca
+                # para que el usuario revise, en vez de anular la venta en silencio.
+                falta_coste = u > 1e-9 and quedan > 1e-6
+                fa = sorted(set(fechas_adq))
+                anios[anio]["ventas"].append({
+                    "producto": nombres.get(pid, pid), "fecha": f,
+                    "unidades": round(u, 6),
+                    "adquisicion": round(coste, 2),
+                    "transmision": round(imp, 2),
+                    "ganancia": round(imp - coste, 2),
+                    "fechaAdquisicion": fa[0] if len(fa) == 1 else (f"{fa[0]} … {fa[-1]}" if fa else ""),
+                    "sinCoste": falta_coste,
+                })
+            elif t == "dividendo":
+                anios[anio]["rendimientos"].append({
+                    "producto": nombres.get(pid, pid), "fecha": f, "importe": round(imp, 2)})
+
+    out = {}
+    for anio, dat in anios.items():
+        ventas = sorted(dat["ventas"], key=lambda x: x["fecha"])
+        rend = sorted(dat["rendimientos"], key=lambda x: x["fecha"])
+        avisos = []
+        if any(v.get("sinCoste") for v in ventas):
+            avisos.append("Hay ventas de las que falta registrar las compras: su coste de "
+                          "adquisición está incompleto y la ganancia puede salir más alta de la real. "
+                          "Añade esas compras en «Mis datos» para que cuadre.")
+        out[anio] = {
+            "ventas": ventas, "rendimientos": rend, "avisos": avisos,
+            "totales": {
+                "transmision": round(sum(v["transmision"] for v in ventas), 2),
+                "adquisicion": round(sum(v["adquisicion"] for v in ventas), 2),
+                "ganancias": round(sum(v["ganancia"] for v in ventas if v["ganancia"] > 0), 2),
+                "perdidas": round(sum(v["ganancia"] for v in ventas if v["ganancia"] < 0), 2),
+                "gananciaNeta": round(sum(v["ganancia"] for v in ventas), 2),
+                "rendimientos": round(sum(r["importe"] for r in rend), 2),
+            },
+        }
+    return out
 
 
 def descarga_series(productos_cfg, series=None):
@@ -571,12 +653,16 @@ def serie_cambio(moneda, carpeta):
 
 # ---------------------------------------------------------------- construccion
 
-def construir(cfg, carpeta, descargar=True):
+def construir(cfg, carpeta, descargar=True, hasta=None):
     """
     Calcula todo lo que pinta el panel a partir de la cartera (productos, movimientos
     y valoraciones) y devuelve el diccionario DATOS. Con descargar=False no sale a
     internet: recalcula con los precios guardados en la cache. Con descargar="faltan"
     solo descarga los precios de productos nuevos.
+
+    Con hasta="AAAA-MM" calcula el panel COMO ESTABA a fin de ese mes: ignora los
+    movimientos, valoraciones y flujos posteriores. No persiste nada (vista de
+    consulta de un mes pasado). Siempre se descarga=False implícito para hasta.
     """
     global CACHE, SIN_RED, SOLO_FALTAN
     CACHE = os.path.join(carpeta, "cache")
@@ -584,6 +670,19 @@ def construir(cfg, carpeta, descargar=True):
     SOLO_FALTAN = descargar == "faltan"
     AVISOS.clear()
     _COTIZACIONES.clear()
+
+    # Meses con datos (siempre la lista completa, aunque luego acotemos con «hasta»).
+    meses_disp = sorted({str(x.get("fecha"))[:7]
+                         for clave in ("movimientos", "valoraciones", "flujos")
+                         for x in (cfg.get(clave) or []) if x.get("fecha")})
+
+    if hasta:
+        anyo, mes = int(hasta[:4]), int(hasta[5:7])
+        lim = f"{anyo:04d}-{mes:02d}-{calendar.monthrange(anyo, mes)[1]:02d}"
+        cfg = dict(cfg,
+                   movimientos=[m for m in cfg.get("movimientos", []) if str(m.get("fecha", "")) <= lim],
+                   valoraciones=[v for v in cfg.get("valoraciones", []) if str(v.get("fecha", "")) <= lim],
+                   flujos=[f for f in (cfg.get("flujos") or []) if str(f.get("fecha", "")) <= lim])
 
     productos_cfg = [dict(p) for p in cfg.get("productos", [])]
     for p in productos_cfg:
@@ -610,7 +709,27 @@ def construir(cfg, carpeta, descargar=True):
         if s and movs_por.get(p["id"]):
             ultimas.append(max(s))
     fecha_extracto = min(d(max(ultimas)), hoy()) if ultimas else hoy()
+    if hasta:
+        # Vista «a fin de mes»: aunque la cotización en caché llegue hasta hoy, la foto
+        # debe quedar a fin del mes pedido (si no, mezclaríamos cantidades de entonces
+        # con precios de ahora).
+        fecha_extracto = min(fecha_extracto, d(lim))
     print(f"  Datos valorados a {fecha_extracto}")
+
+    # Tipo de cambio manual (F5): factor a euros para productos «a mano» en otra
+    # moneda. Un único tipo para todo el histórico (ver ADR 0007 y la Guía del Excel).
+    monedas_cfg = (cfg.get("config") or {}).get("monedas") or []
+    fx_man = {m["codigo"]: float(m["tipo"]) for m in monedas_cfg if m.get("codigo") and m.get("tipo")}
+    monedas_faltan = set()
+
+    def factor_manual(p):
+        m = p.get("moneda") or "EUR"
+        if (p.get("fuente") or "manual") != "manual" or m in ("EUR", ""):
+            return 1.0
+        if m in fx_man:
+            return fx_man[m]
+        monedas_faltan.add(m)
+        return 1.0
 
     # ---- primera pasada: movimientos, precio actual y fechas ----
     productos, otros, pasivos, primera = [], [], [], None
@@ -631,7 +750,9 @@ def construir(cfg, carpeta, descargar=True):
             (p.get("moneda") or "EUR").upper() != "EUR" else None) if x)
         p["aportaciones"] = []
         movs = movs_por.get(p["id"], [])
-        snaps = [[v["fecha"], float(v["valor"]), v.get("aportado")]
+        fac = factor_manual(p)
+        snaps = [[v["fecha"], float(v["valor"]) * fac,
+                  (float(v["aportado"]) * fac if v.get("aportado") is not None else None)]
                  for v in sorted(vals_por.get(p["id"], []), key=lambda v: v["fecha"])]
         fechas_p = [m["fecha"] for m in movs] + [s[0] for s in snaps]
 
@@ -793,7 +914,7 @@ def construir(cfg, carpeta, descargar=True):
                 p["serieAportado"] = serie_ap
                 p["aportado"] = round(acum + sum(e[2] for e in pend), 2)
                 p["desde"] = min(p["desde"], min(e[0] for e in eventos))
-            for f, v, a in snaps:
+            for f, v, _a in snaps:
                 p["aportaciones"].append({"fecha": f.isoformat(), "importe": None,
                                           "valor": v, "tipo": "snapshot"})
 
@@ -880,7 +1001,15 @@ def construir(cfg, carpeta, descargar=True):
         serie_total.append(round(s, 2))
         serie_ap_total.append(round(sum((p["serieAportado"][i] or 0) for p in productos), 2))
 
+    # Serie diaria de deudas (magnitud): los pasivos vienen con serie negativa.
+    serie_deuda = [round(-sum((e["serie"][i] or 0) for e in ser_pasivos), 2) for i in range(n)] if ser_pasivos else None
+
     patrimonio = round(serie_total[-1], 2)
+    # Denominador de los pesos de composición: el patrimonio BRUTO (solo activos).
+    # Usar el neto (patrimonio) dispararía los % por encima de 100 % en cuanto hay
+    # deuda, y además descuadraría con «asignacion»/«concentracionEntidad» (que ya
+    # usan el bruto). Coincide con «bruto» (definido más abajo, línea ~1273).
+    bruto_activos = round(sum(p["valor"] for p in productos + ser_otros), 2)
     aportado_total = round(sum(p["aportado"] or 0 for p in productos), 2)
     plusvalia_total = round(valor_conocido - aportado_total, 2)
     flujos_globales.append((fecha_extracto, valor_tir))
@@ -888,7 +1017,7 @@ def construir(cfg, carpeta, descargar=True):
     realizado_total = round(sum(p.get("realizado") or 0 for p in productos), 2)
 
     for p in productos + ser_otros + ser_pasivos:
-        p["peso"] = r4(p["valor"] / patrimonio) if patrimonio else 0
+        p["peso"] = r4(p["valor"] / bruto_activos) if bruto_activos else 0
 
     # agregados
     def agrupar(campo):
@@ -903,7 +1032,7 @@ def construir(cfg, carpeta, descargar=True):
             acc[k] += e["valor"]
             slot.setdefault(k, e.get("slot", 8))
         return [{"nombre": k, "valor": round(v, 2),
-                 "peso": r4(v / patrimonio) if patrimonio else 0,
+                 "peso": r4(v / bruto_activos) if bruto_activos else 0,
                  "color": PALETA.get(slot[k], PALETA[8])}
                 for k, v in sorted(acc.items(), key=lambda x: -x[1])]
 
@@ -1113,7 +1242,7 @@ def construir(cfg, carpeta, descargar=True):
     for c in cfg.get("comparador", []):
         idx = idx_cartera if c.get("real") else indice_pesos(c.get("pesos", {}))
         if not idx:
-            aviso("Comparador: no puedo construir '%s'." % c.get("nombre"))
+            aviso("Comparador: no puedo construir '{}'.".format(c.get("nombre")))
             continue
         met = metricas_indice(idx, rf)
         if not met:
@@ -1156,6 +1285,13 @@ def construir(cfg, carpeta, descargar=True):
     # --- resumen mes a mes ---
     meses_nat = sorted({f[:7] for f in eje_iso})
     resumen_mensual = []
+    # El efectivo y las deudas no tienen "mercado": cualquier cambio de saldo es
+    # dinero que entra o sale (ingresos, gastos, amortización), no revalorización.
+    ids_pasivos = {id(e) for e in ser_pasivos}
+
+    def sin_mercado(p):
+        return id(p) in ids_pasivos or p.get("tipoClave") == "efectivo"
+
     for mes in meses_nat:
         idxs = [i for i, f in enumerate(eje_iso) if f[:7] == mes]
         i_ini, i_fin, ant = idxs[0], idxs[-1], idxs[0] - 1
@@ -1164,21 +1300,28 @@ def construir(cfg, carpeta, descargar=True):
             return sum((p["serie"][i] or 0) for p in todos_p) if i >= 0 else 0.0
 
         v0, v1 = suma(ant), suma(i_fin)
-        ap = sum(flujo_dia[i] for i in idxs)
+        ap = sum(flujo_dia[i] for i in idxs)   # flujos de inversión (compras/ventas)
         nuevos, detalle = 0.0, {}
         for p in todos_p:
             s = p["serie"]
             pv0 = (s[ant] or 0) if ant >= 0 else 0.0
             pv1 = s[i_fin] or 0.0
-            pap = sum(flujo_prod.get(p["id"], [0.0] * n)[i] for i in idxs)
-            # Un producto sin coste registrado (efectivo, pensiones) que aparece
-            # a mitad de mes no es "el mercado subiendo": es que entra al panel.
-            estrena = (ant < 0 or s[ant] is None) and s[i_fin] is not None
-            pnuevo = pv1 if (estrena and p.get("aportado") is None) else 0.0
-            nuevos += pnuevo
+            if sin_mercado(p):
+                # Toda la variación del saldo cuenta como aportado; mercado = 0.
+                pap = r2(pv1 - pv0)
+                ap += pap
+                pnuevo = pmercado = 0.0
+            else:
+                pap = r2(sum(flujo_prod.get(p["id"], [0.0] * n)[i] for i in idxs))
+                # Un producto de inversión sin coste registrado que aparece a mitad
+                # de mes no es "el mercado subiendo": es que entra al panel.
+                estrena = (ant < 0 or s[ant] is None) and s[i_fin] is not None
+                pnuevo = pv1 if (estrena and p.get("aportado") is None) else 0.0
+                nuevos += pnuevo
+                pmercado = r2(pv1 - pv0 - pap - pnuevo)
             if pv1 or pv0 or pap:
                 detalle[p["id"]] = {"inicio": r2(pv0), "fin": r2(pv1), "aportado": r2(pap),
-                                    "nuevo": r2(pnuevo), "mercado": r2(pv1 - pv0 - pap - pnuevo)}
+                                    "nuevo": r2(pnuevo), "mercado": pmercado}
         b = idx_cartera[ant] if ant >= 0 else idx_cartera[i_ini]
         resumen_mensual.append({
             "mes": mes, "inicio": r2(v0), "fin": r2(v1), "aportado": r2(ap),
@@ -1241,9 +1384,313 @@ def construir(cfg, carpeta, descargar=True):
                     "precioRef": r4(prod_v["nav"]), "btcRef": r2(ref),
                     "fechaRef": prod_v.get("navFecha") or fecha_extracto.isoformat()}
 
+    # ---- patrimonio del hogar (bruto/neto, disponible, apartados, dinero libre) ----
+    # Los activos suman (productos + otros); las deudas (pasivos) llegan con valor
+    # negativo. El patrimonio neto coincide con «patrimonio».
+    activos = productos + ser_otros
+
+    def es_disponible(p):
+        # Liquidez inmediata: lo que el usuario marcó, o el efectivo por defecto.
+        return bool(p.get("disponible", p.get("tipoClave") == "efectivo"))
+
+    bruto = round(sum(p["valor"] for p in activos), 2)
+    deudas_total = round(-sum(e["valor"] for e in ser_pasivos), 2)
+    neto = round(bruto - deudas_total, 2)
+    disponible = round(sum(p["valor"] for p in activos if es_disponible(p)), 2)
+    no_disponible = round(bruto - disponible, 2)
+
+    apartados_cfg = cfg.get("apartados", []) or []
+    apartados_total = round(sum(float(a.get("importe") or 0) for a in apartados_cfg), 2)
+    colchon = round(float((cfg.get("config") or {}).get("colchon") or 0), 2)
+    # Dinero libre para invertir = disponible − apartados − colchón (puede ser negativo).
+    dinero_libre = round(disponible - apartados_total - colchon, 2)
+
+    # Patrimonio neto atribuido a cada titular (los activos suman; las deudas restan).
+    tit_acc = defaultdict(float)
+    for p in activos:
+        tit_acc[p.get("titular") or "Sin asignar"] += p["valor"]
+    for e in ser_pasivos:
+        tit_acc[e.get("titular") or "Sin asignar"] += e["valor"]
+    por_titular = []
+    for i, (k, v) in enumerate(sorted(tit_acc.items(), key=lambda x: -x[1])):
+        por_titular.append({"nombre": k, "valor": round(v, 2),
+                            "peso": r4(v / neto) if neto else 0,
+                            "color": PALETA.get(i % 12 + 1, PALETA[1])})
+
+    apartados_out = [{"id": a.get("id"), "nombre": a.get("nombre"),
+                      "finalidad": a.get("finalidad", ""), "titular": a.get("titular", ""),
+                      "importe": round(float(a.get("importe") or 0), 2),
+                      "fechaPrevista": a.get("fechaPrevista", "")}
+                     for a in apartados_cfg]
+
+    # ---- deudas (F2): detalle por deuda, cuota total, intereses y ratio ----
+    # El capital pendiente es el último saldo anotado (ser_pasivos llega en negativo).
+    deudas_detalle, cuota_total, interes_anual_total = [], 0.0, 0.0
+    for e in ser_pasivos:
+        cap = round(-e["valor"], 2)
+        tae = e.get("tae")
+        cuota = e.get("cuota")
+        interes = round(cap * tae, 2) if (tae and cap) else None
+        if cuota:
+            cuota_total += cuota
+        if interes:
+            interes_anual_total += interes
+        deudas_detalle.append({
+            "id": e["id"], "nombre": e.get("corto") or e.get("nombre"),
+            "acreedor": e.get("entidad", ""), "titular": e.get("titular", ""),
+            "capitalPendiente": cap, "capitalInicial": e.get("capitalInicial"),
+            "tae": tae, "cuota": cuota, "interesAnual": interes,
+            "fechaInicio": e.get("fechaInicio"), "fechaVencimiento": e.get("fechaVencimiento"),
+            "fechaRevision": e.get("fechaRevision"),
+            "color": e.get("slotColor"),
+        })
+    cuota_total = round(cuota_total, 2)
+    interes_anual_total = round(interes_anual_total, 2)
+    ratio_deuda_activos = r4(deudas_total / bruto) if bruto else None
+
+    # ---- ingresos y gastos del hogar (F3, versión ligera) ----
+    flujos_cfg = cfg.get("flujos", []) or []
+    ig_mes = defaultdict(lambda: {"ingreso": 0.0, "gasto": 0.0})
+    for fl in flujos_cfg:
+        t = fl.get("tipo")
+        if t in ("ingreso", "gasto"):
+            ig_mes[fl["fecha"][:7]][t] += float(fl.get("importe") or 0)
+
+    # Últimos 12 meses hasta el mes de la fecha de valoración.
+    mm = dt.date(fecha_extracto.year, fecha_extracto.month, 1)
+    meses_ig = []
+    for _ in range(12):
+        meses_ig.append(f"{mm.year:04d}-{mm.month:02d}")
+        mm = (mm.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+    meses_ig.reverse()
+
+    ser_ing = [round(ig_mes[m]["ingreso"], 2) for m in meses_ig]
+    ser_gas = [round(ig_mes[m]["gasto"], 2) for m in meses_ig]
+    ser_aho = [round(i - g, 2) for i, g in zip(ser_ing, ser_gas, strict=False)]
+    ser_tasa = [r4((i - g) / i) if i else None for i, g in zip(ser_ing, ser_gas, strict=False)]
+
+    def _bloque_ig(ing, gas):
+        aho = round(ing - gas, 2)
+        return {"ingresos": round(ing, 2), "gastos": round(gas, 2), "ahorro": aho,
+                "tasaAhorro": r4(aho / ing) if ing else None}
+
+    mes_ref_key = f"{fecha_extracto.year:04d}-{fecha_extracto.month:02d}"
+    este_mes_ig = _bloque_ig(ig_mes[mes_ref_key]["ingreso"], ig_mes[mes_ref_key]["gasto"])
+    ing_ano = sum(v["ingreso"] for k, v in ig_mes.items() if k[:4] == mes_ref_key[:4])
+    gas_ano = sum(v["gasto"] for k, v in ig_mes.items() if k[:4] == mes_ref_key[:4])
+    ano_ig = _bloque_ig(ing_ano, gas_ano)
+    media12_ig = _bloque_ig(sum(ser_ing) / 12, sum(ser_gas) / 12)
+
+    cat12 = defaultdict(float)          # últimos 12 meses por categoría
+    cat_mes = defaultdict(float)        # mes en curso por categoría
+    cat_ano = defaultdict(float)        # año en curso por categoría
+    for fl in flujos_cfg:
+        t = fl.get("tipo")
+        if t not in ("ingreso", "gasto"):
+            continue
+        clave = (fl.get("categoria") or "Sin categoría", t)
+        imp = float(fl.get("importe") or 0)
+        if fl["fecha"][:7] in meses_ig:
+            cat12[clave] += imp
+        if fl["fecha"][:7] == mes_ref_key:
+            cat_mes[clave] += imp
+        if fl["fecha"][:4] == mes_ref_key[:4]:
+            cat_ano[clave] += imp
+    # Presupuesto mensual por categoría (F3+: A1), definido en Configuración.
+    cats_cfg = (cfg.get("config") or {}).get("categorias") or []
+    pres_map = {(c.get("nombre"), c.get("tipo")): c.get("presupuesto")
+                for c in cats_cfg if c.get("nombre")}
+    claves = set(cat12) | {(c["nombre"], c["tipo"]) for c in cats_cfg if c.get("nombre")}
+    por_categoria = []
+    for (c, t) in claves:
+        pres = pres_map.get((c, t))
+        mes_v = round(cat_mes.get((c, t), 0.0), 2)
+        por_categoria.append({
+            "categoria": c, "tipo": t, "total12": round(cat12.get((c, t), 0.0), 2),
+            "media": round(cat12.get((c, t), 0.0) / 12, 2), "mes": mes_v,
+            "anio": round(cat_ano.get((c, t), 0.0), 2), "presupuesto": pres,
+            "diferencia": round(mes_v - pres, 2) if pres is not None else None,
+        })
+    por_categoria.sort(key=lambda x: -x["total12"])
+    presupuesto_mensual = round(sum(c.get("presupuesto") or 0 for c in cats_cfg if c.get("tipo") == "gasto"), 2)
+
+    flujos_out = {"meses": meses_ig, "ingresos": ser_ing, "gastos": ser_gas,
+                  "ahorro": ser_aho, "tasaAhorro": ser_tasa, "esteMes": este_mes_ig,
+                  "anio": ano_ig, "media12": media12_ig, "porCategoria": por_categoria,
+                  "presupuestoMensual": presupuesto_mensual} if flujos_cfg else None
+
+    # Cuota de deudas sobre ingresos: del mes en curso, o de la media si el mes no tiene ingresos.
+    ing_ratio = este_mes_ig["ingresos"] or media12_ig["ingresos"]
+    cuota_sobre_ingresos = r4(cuota_total / ing_ratio) if (cuota_total and ing_ratio) else None
+
+    # ---- asignación objetivo, concentración, vencimientos y alertas (F4) ----
+    conf = cfg.get("config") or {}
+    objetivos = conf.get("objetivos") or {}
+    umbral = float(conf.get("umbralConcentracion") or 0.4)
+    desv_max = float(conf.get("desviacionMax") or 0.05)
+    dias_aviso = int(conf.get("diasAviso") or 90)
+
+    val_por_tipo = defaultdict(float)
+    for p in activos:
+        val_por_tipo[p.get("tipoClave") or "otro"] += p["valor"]
+    suma_obj = round(sum(objetivos.values()), 6)
+    asignacion = []
+    for i, (clave, val) in enumerate(sorted(val_por_tipo.items(), key=lambda x: -x[1])):
+        peso = val / bruto if bruto else 0
+        obj = objetivos.get(clave)
+        if obj is None:
+            estado, desv, ajuste = "Sin objetivo", None, None
+        else:
+            desv = peso - obj
+            estado = "OK" if abs(desv) <= desv_max else ("Sobreponderado" if desv > 0 else "Infraponderado")
+            # Rebalanceo: euros que faltan (+) o sobran (-) para llegar al objetivo.
+            ajuste = round(obj * bruto - val, 2)
+        asignacion.append({"tipoClave": clave, "tipo": TIPOS.get(clave, clave),
+                           "valor": round(val, 2), "peso": r4(peso), "objetivo": obj,
+                           "desviacion": r4(desv) if desv is not None else None,
+                           "ajuste": ajuste, "estado": estado, "concentracion": peso > umbral,
+                           "color": PALETA.get(i % 12 + 1, PALETA[1])})
+
+    val_por_ent = defaultdict(float)
+    for p in activos:
+        val_por_ent[p.get("entidad") or "Sin entidad"] += p["valor"]
+    concentracion_entidad = []
+    for i, (k, v) in enumerate(sorted(val_por_ent.items(), key=lambda x: -x[1])):
+        peso = v / bruto if bruto else 0
+        concentracion_entidad.append({"entidad": k, "valor": round(v, 2), "peso": r4(peso),
+                                      "concentracion": peso > umbral,
+                                      "color": PALETA.get(i % 12 + 1, PALETA[1])})
+
+    vencimientos = []
+
+    def _venc(fecha, nombre, clase, tipo, entidad, titular, saldo):
+        if not fecha:
+            return
+        try:
+            dias = (d(fecha) - fecha_extracto).days
+        except ValueError:
+            return
+        estado = "Vencido" if dias < 0 else ("Próximo" if dias <= dias_aviso else "OK")
+        vencimientos.append({"nombre": nombre, "clase": clase, "tipo": tipo,
+                             "entidad": entidad or "", "titular": titular or "",
+                             "fecha": fecha, "diasRestantes": dias, "estado": estado,
+                             "saldo": round(abs(saldo or 0), 2)})
+
+    # Activos y deudas: fecha de vencimiento (depósito, fin de promoción, préstamo…).
+    for p in productos + ser_otros + ser_pasivos:
+        es_pasivo = p in ser_pasivos
+        _venc(p.get("fechaVencimiento"), p.get("corto") or p.get("nombre"),
+              "Deuda" if es_pasivo else "Activo", p.get("tipo"),
+              p.get("entidad"), p.get("titular"), p.get("valor"))
+        # Deudas: además, la fecha de revisión del tipo de interés.
+        if es_pasivo:
+            _venc(p.get("fechaRevision"), p.get("corto") or p.get("nombre"),
+                  "Revisión", "Revisión de interés", p.get("entidad"),
+                  p.get("titular"), p.get("valor"))
+    # Apartados: fecha prevista para disponer del dinero comprometido.
+    for a in apartados_cfg:
+        _venc(a.get("fechaPrevista"), a.get("nombre"), "Apartado",
+              a.get("finalidad", ""), "", a.get("titular"), a.get("importe"))
+    vencimientos.sort(key=lambda x: x["fecha"])
+
+    alertas = []
+
+    def _al(txt, n, nivel="aviso"):
+        alertas.append({"texto": txt, "n": n, "nivel": nivel})
+
+    if objetivos and abs(suma_obj - 1.0) > 1e-6:
+        _al("Los objetivos de asignación no suman 100 %.", 1)
+    nct = sum(1 for a in asignacion if a["concentracion"])
+    if nct:
+        _al("Tipos de activo por encima del umbral de concentración.", nct)
+    nce = sum(1 for e in concentracion_entidad if e["concentracion"])
+    if nce:
+        _al("Entidades por encima del umbral de concentración.", nce)
+    nfo = sum(1 for a in asignacion if a["estado"] in ("Sobreponderado", "Infraponderado"))
+    if nfo:
+        _al("Tipos de activo fuera del objetivo (más allá de la desviación máxima).", nfo)
+    nven = sum(1 for v in vencimientos if v["estado"] == "Vencido")
+    if nven:
+        _al("Fechas ya vencidas: revísalas y, si procede, da de baja.", nven)
+    nprox = sum(1 for v in vencimientos if v["estado"] == "Próximo")
+    if nprox:
+        _al("Vencimientos dentro del plazo de aviso.", nprox, "info")
+    if dinero_libre < 0:
+        _al("Dinero libre para invertir negativo (apartados + colchón superan lo disponible).", 1)
+    if monedas_faltan:
+        _al("Monedas sin tipo de cambio configurado (se toman en euros): "
+            + ", ".join(sorted(monedas_faltan)) + ".", len(monedas_faltan))
+    # Recordatorio (B3): hace mucho que no anotas nada. Umbral configurable.
+    _ds = (cfg.get("config") or {}).get("diasSinAnotar")
+    dias_sin = int(_ds) if _ds is not None else 30   # respeta el 0 (avisar siempre)
+    fechas_datos = ([m.get("fecha") for m in cfg.get("movimientos", [])]
+                    + [v.get("fecha") for v in cfg.get("valoraciones", [])]
+                    + [f.get("fecha") for f in (cfg.get("flujos") or [])])
+    fechas_datos = [f for f in fechas_datos if f]
+    if fechas_datos:
+        try:
+            dias = (hoy() - d(max(fechas_datos))).days
+        except ValueError:
+            dias = 0
+        if dias > dias_sin:
+            _al(f"Hace {dias} días que no anotas nada (saldos, movimientos o gastos).", 1, "info")
+
+    control = {"umbral": r4(umbral), "desviacionMax": r4(desv_max), "diasAviso": dias_aviso,
+               "sumaObjetivos": r4(suma_obj)}
+
+    # --- variación respecto a hace 1 y 12 meses (como la cabecera del Excel) ---
+    def _menos_meses(fecha, meses):
+        m = fecha.month - 1 - meses
+        anyo = fecha.year + m // 12
+        mes = m % 12 + 1
+        dia = min(fecha.day, calendar.monthrange(anyo, mes)[1])
+        return dt.date(anyo, mes, dia)
+
+    def _valor_en(serie, objetivo):
+        val = None
+        for i, f in enumerate(eje_iso):
+            if d(f) <= objetivo:
+                if serie[i] is not None:
+                    val = serie[i]
+            else:
+                break
+        return val
+
+    def _variacion(serie):
+        if not serie:
+            return None
+        ahora = serie[-1]
+        h1 = _valor_en(serie, _menos_meses(fecha_extracto, 1))
+        h12 = _valor_en(serie, _menos_meses(fecha_extracto, 12))
+        return {
+            "ahora": r2(ahora),
+            "hace1Mes": r2(h1) if h1 is not None else None,
+            "hace12Meses": r2(h12) if h12 is not None else None,
+            "varMes": r2(ahora - h1) if h1 is not None else None,
+            "varAno": r2(ahora - h12) if h12 is not None else None,
+        }
+
+    serie_bruto = [round(serie_total[i] + (serie_deuda[i] if serie_deuda else 0), 2)
+                   for i in range(n)]
+    variacion = {"neto": _variacion(serie_total), "bruto": _variacion(serie_bruto),
+                 "deuda": _variacion(serie_deuda) if serie_deuda else None}
+
     datos = {
         "generado": dt.datetime.now().replace(microsecond=0).isoformat(),
+        "hasta": hasta,
+        "mesesDisponibles": meses_disp,
+        "fiscal": detalle_fiscal(cfg),
         "titular": cfg.get("titular", "Mi patrimonio"),
+        "titulares": cfg.get("titulares", []) or [],
+        "apartados": apartados_out,
+        "deudas": deudas_detalle,
+        "flujos": flujos_out,
+        "asignacion": asignacion,
+        "concentracionEntidad": concentracion_entidad,
+        "vencimientos": vencimientos,
+        "alertas": alertas,
+        "control": control,
+        "monedas": monedas_cfg,
         "moneda": cfg.get("moneda", "EUR"),
         "fechaExtracto": fecha_extracto.isoformat(),
         "fechas": eje_iso,
@@ -1252,6 +1699,21 @@ def construir(cfg, carpeta, descargar=True):
         "pasivos": ser_pasivos,
         "total": {
             "patrimonio": patrimonio,
+            "patrimonioBruto": bruto,
+            "patrimonioNeto": neto,
+            "variacion": variacion,
+            "deudas": deudas_total,
+            "disponible": disponible,
+            "noDisponible": no_disponible,
+            "apartadosTotal": apartados_total,
+            "colchon": colchon,
+            "dineroLibre": dinero_libre,
+            "porTitular": por_titular,
+            "cuotaMensualDeudas": cuota_total,
+            "interesAnualDeudas": interes_anual_total,
+            "ratioDeudaActivos": ratio_deuda_activos,
+            "cuotaSobreIngresos": cuota_sobre_ingresos,
+            "tasaAhorro": media12_ig["tasaAhorro"],
             "aportado": aportado_total,
             "valorConCoste": round(valor_conocido, 2),
             "plusvalia": plusvalia_total,
@@ -1260,6 +1722,7 @@ def construir(cfg, carpeta, descargar=True):
             "realizado": realizado_total,
             "serie": serie_total,
             "serieAportado": serie_ap_total,
+            "serieDeuda": serie_deuda,
             "porClase": agrupar("clase"),
             "porEntidad": agrupar("entidad"),
             "porTipo": agrupar("tipo"),
@@ -1289,16 +1752,19 @@ def construir(cfg, carpeta, descargar=True):
         for k in [k for k in p if k.startswith("_")]:
             p.pop(k)
 
-    # historico: un resumen por cada fecha calculada, para no perder el rastro
-    hist_ruta = os.path.join(carpeta, "historico.json")
-    hist = lee_cache(hist_ruta) or []
-    hist = [h for h in hist if h.get("fecha") != fecha_extracto.isoformat()]
-    hist.append({"fecha": fecha_extracto.isoformat(), "patrimonio": patrimonio,
-                 "aportado": aportado_total, "plusvalia": plusvalia_total,
-                 "porProducto": {p["id"]: p["valor"] for p in productos}})
-    hist.sort(key=lambda h: h["fecha"])
-    with open(hist_ruta, "w", encoding="utf-8") as f:
-        json.dump(hist, f, ensure_ascii=False, indent=1)
+    # historico: un resumen por cada fecha calculada, para no perder el rastro.
+    # En la vista «a fin de mes» (hasta) NO se persiste: es una consulta de solo
+    # lectura y escribir aquí sobrescribiría la entrada real con datos recortados.
+    if not hasta:
+        hist_ruta = os.path.join(carpeta, "historico.json")
+        hist = lee_cache(hist_ruta) or []
+        hist = [h for h in hist if h.get("fecha") != fecha_extracto.isoformat()]
+        hist.append({"fecha": fecha_extracto.isoformat(), "patrimonio": patrimonio,
+                     "aportado": aportado_total, "plusvalia": plusvalia_total,
+                     "porProducto": {p["id"]: p["valor"] for p in productos}})
+        hist.sort(key=lambda h: h["fecha"])
+        with open(hist_ruta, "w", encoding="utf-8") as f:
+            json.dump(hist, f, ensure_ascii=False, indent=1)
 
     print()
     print("=" * 62)

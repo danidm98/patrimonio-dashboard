@@ -7,12 +7,14 @@ en 127.0.0.1) y abre el navegador. Tus datos nunca salen de la carpeta mis_datos
 a internet solo se sale para descargar precios.
 """
 
+import copy
 import datetime as dt
 import json
 import logging
 import os
 import re
 import secrets
+import shutil
 import sys
 import threading
 import urllib.request
@@ -23,11 +25,26 @@ from werkzeug.serving import make_server
 
 from . import almacen, buscar, exportar, importar, motor, plantilla
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def _base_recursos():
+    """Dónde viven los recursos de solo lectura (web, demo, VERSION). Al empaquetar
+    con PyInstaller están en sys._MEIPASS; si no, en la carpeta del proyecto."""
+    return getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _base_datos():
+    """Dónde van los datos del usuario (mis_datos): JUNTO al ejecutable cuando está
+    empaquetado (deben ser escribibles), o en la carpeta del proyecto si no."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+RAIZ = _base_recursos()
 WEB = os.path.join(RAIZ, "app", "web")
-# Otra carpeta de datos, solo para pruebas o capturas: PATRIMONIO_DATOS=ruta
-DATOS = os.environ.get("PATRIMONIO_DATOS") or os.path.join(RAIZ, "mis_datos")
 DEMO = os.path.join(RAIZ, "demo", "cartera.json")
+# Otra carpeta de datos, solo para pruebas o capturas: PATRIMONIO_DATOS=ruta
+DATOS = os.environ.get("PATRIMONIO_DATOS") or os.path.join(_base_datos(), "mis_datos")
 PUERTO = int(os.environ.get("PATRIMONIO_PUERTO") or 8765)
 HORAS_PRECIOS = 6          # al arrancar, se actualizan si tienen más de esto
 
@@ -36,11 +53,49 @@ app.json.sort_keys = False   # respeta el orden de tipos y listas al mandarlos a
 cerrojo = threading.RLock()  # el motor no admite dos cálculos (ni dos escrituras) a la vez
 
 
+@app.errorhandler(almacen.ErrorValidacion)
+def _error_validacion(e):
+    # Cualquier ErrorValidacion no capturado (p. ej. cartera.json dañado al leerlo)
+    # se devuelve como 400 con mensaje claro, nunca como un 500 opaco.
+    return jsonify(ok=False, errores=e.errores), 400
+
+
+@app.errorhandler(Exception)
+def _error_inesperado(e):
+    # Red de seguridad: cualquier error no previsto se registra y se devuelve como
+    # un 500 controlado, sin filtrar la traza. Los errores HTTP normales (404…) pasan.
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    logging.exception("Error inesperado")
+    return jsonify(ok=False, error="Ha ocurrido un error inesperado."), 500
+
+
+# Cabecera de seguridad (CSP): el navegador solo ejecuta el JS de la propia app
+# (script-src 'self', sin inline), así que un nombre con HTML inyectado no puede
+# ejecutar código aunque se colara. Se permiten los estilos inline (no ejecutan
+# JS) y las conexiones del navegador a las fuentes de precio en vivo.
+CSP = ("default-src 'self'; "
+       "script-src 'self'; "
+       "style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data:; "
+       "connect-src 'self' https://api.binance.com https://api.coingecko.com; "
+       "base-uri 'self'; object-src 'none'; frame-ancestors 'none'")
+
+
+@app.after_request
+def _cabeceras_seguridad(resp):
+    resp.headers.setdefault("Content-Security-Policy", CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
 # ---------------------------------------------------------------- archivos
 
 def lee_json(ruta, defecto=None):
     try:
-        with open(ruta, "r", encoding="utf-8") as f:
+        with open(ruta, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return defecto
@@ -55,21 +110,94 @@ def escribe_json(ruta, datos):
     os.replace(tmp, ruta)
 
 
+# ---------------------------------------------------------------- carteras
+# Varias carteras conviven en DATOS/carteras/<id>/ (cada una con su cartera.json,
+# calculado, copias, cache…). DATOS/registro.json guarda cuál está activa. Si solo
+# hay una cartera suelta en DATOS/cartera.json (modo antiguo), se sigue usando tal
+# cual: el multi-cartera solo se estrena al crear la segunda.
+
+def _carteras_dir():
+    return os.path.join(DATOS, "carteras")
+
+
+def registro():
+    return lee_json(os.path.join(DATOS, "registro.json"), {}) or {}
+
+
+def guarda_registro(reg):
+    escribe_json(os.path.join(DATOS, "registro.json"), reg)
+
+
+def asegura_multi():
+    """Pasa del modo antiguo (cartera.json suelto en DATOS) al multi: mueve esa
+    cartera a carteras/<id>/ y la deja activa. No hace nada si ya es multi."""
+    if os.path.isdir(_carteras_dir()):
+        return
+    suelta = os.path.join(DATOS, "cartera.json")
+    if not os.path.exists(suelta):
+        return
+    cfg = lee_json(suelta, {}) or {}
+    cid = almacen.slug(cfg.get("titular") or "cartera", set())
+    destino = os.path.join(_carteras_dir(), cid)
+    os.makedirs(destino, exist_ok=True)
+    for n in os.listdir(DATOS):
+        if n not in ("carteras", "registro.json"):
+            os.replace(os.path.join(DATOS, n), os.path.join(destino, n))
+    guarda_registro({"activa": cid})
+
+
+def carteras():
+    """Carteras disponibles en DATOS/carteras/<id>/ (modo multi)."""
+    out = []
+    base = _carteras_dir()
+    if os.path.isdir(base):
+        for cid in sorted(os.listdir(base)):
+            cfg = lee_json(os.path.join(base, cid, "cartera.json"))
+            if cfg is not None:
+                out.append({"id": cid, "nombre": cfg.get("titular") or cid})
+    return out
+
+
+def id_activa():
+    lst = carteras()
+    if not lst:
+        return None
+    ids = {c["id"] for c in lst}
+    act = registro().get("activa")
+    return act if act in ids else lst[0]["id"]
+
+
+def dir_activa():
+    """Carpeta de la cartera activa: carteras/<id>/ (multi), DATOS (modo antiguo con
+    cartera.json suelto) o None (demo, sin ninguna cartera)."""
+    cid = id_activa()
+    if cid:
+        return os.path.join(_carteras_dir(), cid)
+    if os.path.exists(os.path.join(DATOS, "cartera.json")):
+        return DATOS
+    return None
+
+
+def carpeta():
+    """Dónde leer/escribir cartera, cálculo, estado y copias. En demo, DATOS."""
+    return dir_activa() or DATOS
+
+
 def modo():
-    """'propio' si ya hay una cartera en mis_datos; si no, 'demo'."""
-    return "propio" if os.path.exists(os.path.join(DATOS, "cartera.json")) else "demo"
+    return "propio" if dir_activa() else "demo"
 
 
 def cartera():
-    return lee_json(os.path.join(DATOS, "cartera.json") if modo() == "propio" else DEMO, {})
+    d = dir_activa()
+    return lee_json(os.path.join(d, "cartera.json"), {}) if d else lee_json(DEMO, {})
 
 
 def ruta_calculado():
-    return os.path.join(DATOS, f"calculado_{modo()}.json")
+    return os.path.join(carpeta(), f"calculado_{modo()}.json")
 
 
 def estado():
-    return lee_json(os.path.join(DATOS, "estado.json"), {})
+    return lee_json(os.path.join(carpeta(), "estado.json"), {})
 
 
 # ---------------------------------------------------------------- cálculo
@@ -78,11 +206,11 @@ def recalcula(descargar):
     """Recalcula el panel. Con descargar=True baja antes los precios nuevos;
     con "faltan", solo los de productos que aún no tienen precios guardados."""
     with cerrojo:
-        datos = motor.construir(cartera(), DATOS, descargar=descargar)
+        datos = motor.construir(cartera(), carpeta(), descargar=descargar)
         est = estado()
         if descargar is True:
             est["preciosActualizados"] = dt.datetime.now().replace(microsecond=0).isoformat()
-            escribe_json(os.path.join(DATOS, "estado.json"), est)
+            escribe_json(os.path.join(carpeta(), "estado.json"), est)
         if datos is not None:
             datos["modo"] = modo()
             datos["preciosActualizados"] = est.get("preciosActualizados")
@@ -106,9 +234,18 @@ def inicio():
 
 @app.get("/datos.js")
 def datos_js():
-    datos = lee_json(ruta_calculado())
-    if datos is None and not os.path.exists(ruta_calculado()):
-        datos = recalcula(descargar=False)
+    # Vista de un mes pasado: recalcula el panel como estaba a fin de ese mes, sin
+    # persistir nada ni salir a la red (usa los precios de la caché).
+    hasta = request.args.get("hasta")
+    if hasta and re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", hasta):
+        with cerrojo:
+            datos = motor.construir(cartera(), carpeta(), descargar=False, hasta=hasta)
+        if datos is not None:
+            datos["modo"] = modo()
+    else:
+        datos = lee_json(ruta_calculado())
+        if datos is None and not os.path.exists(ruta_calculado()):
+            datos = recalcula(descargar=False)
     cuerpo = "window.DATOS = " + json.dumps(datos, ensure_ascii=False, separators=(",", ":")) + ";\n"
     return Response(cuerpo, mimetype="application/javascript",
                     headers={"Cache-Control": "no-store"})
@@ -127,7 +264,7 @@ def api_actualizar():
 @app.get("/api/cartera")
 def api_cartera():
     return jsonify(modo=modo(), cartera=cartera(), tipos=motor.TIPOS, fuentes=motor.FUENTES,
-                   tiposMovimiento=almacen.TIPOS_MOV)
+                   tiposMovimiento=almacen.TIPOS_MOV, tiposFlujo=almacen.TIPOS_FLUJO)
 
 
 @app.get("/api/buscar")
@@ -138,11 +275,13 @@ def api_buscar():
 
 
 GUARDAR = {"productos": almacen.guarda_producto, "movimientos": almacen.guarda_movimiento,
-           "valoraciones": almacen.guarda_valoracion}
+           "valoraciones": almacen.guarda_valoracion, "apartados": almacen.guarda_apartado,
+           "flujos": almacen.guarda_flujo}
 BORRAR = {"productos": almacen.borra_producto, "movimientos": almacen.borra_movimiento,
-          "valoraciones": almacen.borra_valoracion}
-AVISO_DEMO = ("Estás viendo la cartera de ejemplo. Pulsa «Empezar con mis datos» "
-              "para crear la tuya y poder guardar cambios.")
+          "valoraciones": almacen.borra_valoracion, "apartados": almacen.borra_apartado,
+          "flujos": almacen.borra_flujo}
+AVISO_DEMO = ("Estás viendo el patrimonio de ejemplo. Pulsa «Empezar con mis datos» "
+              "para crear el tuyo y poder guardar cambios.")
 
 
 def cambia(fn):
@@ -150,9 +289,9 @@ def cambia(fn):
     if modo() == "demo":
         return jsonify(ok=False, errores=[AVISO_DEMO]), 403
     with cerrojo:
-        ruta = os.path.join(DATOS, "cartera.json")
-        cfg = almacen.carga(ruta)
+        ruta = os.path.join(carpeta(), "cartera.json")
         try:
+            cfg = almacen.carga(ruta)
             item = fn(cfg)
         except almacen.ErrorValidacion as e:
             return jsonify(ok=False, errores=e.errores), 400
@@ -167,17 +306,22 @@ def api_guardar(coleccion):
         return jsonify(ok=False, errores=["No sé guardar eso."]), 404
     datos = request.get_json(silent=True) or {}
 
-    def fn(cfg):
-        if coleccion != "productos":
-            return GUARDAR[coleccion](cfg, datos)
-        prod, cambio = almacen.guarda_producto(cfg, datos)
-        # Antes de guardar un producto con precio online, se comprueba que lo hay.
-        if cambio and prod["fuente"] != "manual" and not buscar.probar(prod["fuente"], prod["codigo"]):
-            raise almacen.ErrorValidacion([
-                f"No encuentro precio para «{prod['codigo']}» en {motor.FUENTES[prod['fuente']]}. "
-                "Revisa el código con el buscador o elige «a mano» y anota tú su valor."])
-        return prod
-    return cambia(fn)
+    if coleccion == "productos":
+        # La comprobación del precio online es una llamada de red lenta: se hace
+        # ANTES de tomar el cerrojo para no congelar el resto de la app. Para
+        # saber la fuente/código normalizados y si cambian, se normaliza en una
+        # copia (guarda_producto no sale a la red; la prueba la hace el servidor).
+        if modo() != "demo":
+            try:
+                prod, cambio = almacen.guarda_producto(copy.deepcopy(cartera()), datos)
+            except almacen.ErrorValidacion as e:
+                return jsonify(ok=False, errores=e.errores), 400
+            if cambio and prod["fuente"] != "manual" and not buscar.probar(prod["fuente"], prod["codigo"]):
+                return jsonify(ok=False, errores=[
+                    f"No encuentro precio para «{prod['codigo']}» en {motor.FUENTES[prod['fuente']]}. "
+                    "Revisa el código con el buscador o elige «a mano» y anota tú su valor."]), 400
+        return cambia(lambda cfg: almacen.guarda_producto(cfg, datos)[0])
+    return cambia(lambda cfg: GUARDAR[coleccion](cfg, datos))
 
 
 @app.delete("/api/<coleccion>/<ident>")
@@ -185,6 +329,13 @@ def api_borrar(coleccion, ident):
     if coleccion not in BORRAR:
         return jsonify(ok=False, errores=["No sé borrar eso."]), 404
     return cambia(lambda cfg: BORRAR[coleccion](cfg, ident))
+
+
+@app.post("/api/config")
+def api_config():
+    """Guarda los parámetros del hogar (colchón, titulares)."""
+    datos = request.get_json(silent=True) or {}
+    return cambia(lambda cfg: almacen.guarda_config(cfg, datos))
 
 
 @app.post("/api/repartir-colores")
@@ -205,7 +356,62 @@ def api_empezar():
             cfg = dict(lee_json(DEMO, {}), titular="Mi patrimonio (copia del ejemplo)")
         else:
             cfg = json.loads(json.dumps(almacen.CARTERA_VACIA))
-        almacen.guarda(os.path.join(DATOS, "cartera.json"), cfg)
+        almacen.guarda(os.path.join(carpeta(), "cartera.json"), cfg)
+        recalcula(descargar="faltan")
+    return jsonify(ok=True)
+
+
+# ---------------------------------------------------------------- varias carteras
+
+@app.get("/api/carteras")
+def api_carteras():
+    lst, activa = carteras(), id_activa()
+    if not lst and modo() == "propio":   # modo antiguo: una sola cartera suelta
+        lst = [{"id": "__actual__", "nombre": cartera().get("titular") or "Mi patrimonio"}]
+        activa = "__actual__"
+    return jsonify(carteras=lst, activa=activa, modo=modo())
+
+
+@app.post("/api/cartera/nueva")
+def api_cartera_nueva():
+    nombre = ((request.get_json(silent=True) or {}).get("nombre") or "").strip()[:60]
+    if not nombre:
+        return jsonify(ok=False, errores=["Ponle un nombre a la cartera."]), 400
+    with cerrojo:
+        asegura_multi()   # si venías del modo antiguo, lo pasa a multi
+        cid = almacen.slug(nombre, {c["id"] for c in carteras()})
+        cfg = json.loads(json.dumps(almacen.CARTERA_VACIA))
+        cfg["titular"] = nombre
+        os.makedirs(os.path.join(_carteras_dir(), cid), exist_ok=True)
+        almacen.guarda(os.path.join(_carteras_dir(), cid, "cartera.json"), cfg)
+        guarda_registro({"activa": cid})
+        recalcula(descargar="faltan")
+    return jsonify(ok=True, id=cid)
+
+
+@app.post("/api/cartera/activar")
+def api_cartera_activar():
+    cid = (request.get_json(silent=True) or {}).get("id")
+    if cid not in {c["id"] for c in carteras()}:
+        return jsonify(ok=False, errores=["Esa cartera ya no existe."]), 400
+    with cerrojo:
+        guarda_registro({"activa": cid})
+        recalcula(descargar="faltan")
+    return jsonify(ok=True)
+
+
+@app.post("/api/cartera/borrar")
+def api_cartera_borrar():
+    cid = (request.get_json(silent=True) or {}).get("id")
+    ids = {c["id"] for c in carteras()}
+    if cid not in ids:
+        return jsonify(ok=False, errores=["Esa cartera ya no existe."]), 400
+    if len(ids) <= 1:
+        return jsonify(ok=False, errores=["No puedes borrar tu única cartera. Crea otra antes."]), 400
+    with cerrojo:
+        shutil.rmtree(os.path.join(_carteras_dir(), cid), ignore_errors=True)
+        if registro().get("activa") == cid:
+            guarda_registro({"activa": sorted(ids - {cid})[0]})
         recalcula(descargar="faltan")
     return jsonify(ok=True)
 
@@ -223,23 +429,26 @@ def api_importar_previsualizar():
     origen = request.form.get("origen")
     archivos = [(f.filename, f.read()) for f in request.files.getlist("archivos") if f.filename]
     texto = (request.form.get("texto") or "").strip()
+    # Solo la lectura de la cartera necesita el cerrojo. La preparación del plan baja
+    # precios de internet (lenta): se hace FUERA del cerrojo para no congelar la app.
     with cerrojo:
-        cfg = almacen.carga(os.path.join(DATOS, "cartera.json"))
-        if origen == "myinvestor":
-            if not archivos:
-                return jsonify(ok=False, errores=["Elige los archivos CSV que has descargado de MyInvestor."]), 400
-            plan = importar.preparar_myinvestor(cfg, archivos, DATOS)
-        else:
-            if not archivos and not texto:
-                return jsonify(ok=False, errores=["Elige un archivo o pega el texto que te ha dado la IA."]), 400
-            filas, error = [], None
-            for nombre, contenido in archivos or [("pegado.csv", texto)]:
-                leidas, error = importar.leer_tabla(nombre, contenido)
-                if error:
-                    return jsonify(ok=False, errores=[f"{nombre}: {error}" if archivos else error]), 400
-                filas += leidas
-            plan = importar.preparar_tabla(cfg, filas, DATOS)
-        informe = importar.vista_previa(cfg, plan)
+        cfg = almacen.carga(os.path.join(carpeta(), "cartera.json"))
+    dir_datos = carpeta()
+    if origen == "myinvestor":
+        if not archivos:
+            return jsonify(ok=False, errores=["Elige los archivos CSV que has descargado de MyInvestor."]), 400
+        plan = importar.preparar_myinvestor(cfg, archivos, dir_datos)
+    else:
+        if not archivos and not texto:
+            return jsonify(ok=False, errores=["Elige un archivo o pega el texto que te ha dado la IA."]), 400
+        filas, error = [], None
+        for nombre, contenido in archivos or [("pegado.csv", texto)]:
+            leidas, error = importar.leer_tabla(nombre, contenido)
+            if error:
+                return jsonify(ok=False, errores=[f"{nombre}: {error}" if archivos else error]), 400
+            filas += leidas
+        plan = importar.preparar_tabla(cfg, filas, dir_datos)
+    informe = importar.vista_previa(cfg, plan)
     token = secrets.token_hex(8)
     PLANES.clear()   # solo una importación pendiente a la vez
     PLANES[token] = plan
@@ -285,7 +494,7 @@ def api_prompt():
 # ---------------------------------------------------------------- copias de seguridad
 
 def ruta_copias():
-    return os.path.join(DATOS, "copias")
+    return os.path.join(carpeta(), "copias")
 
 
 def valida_copia(cfg):
@@ -297,12 +506,18 @@ def valida_copia(cfg):
 
 
 def restaura(cfg):
-    """Pone cfg como cartera. Lo que hubiera antes queda en las copias automáticas."""
+    """Pone cfg como cartera activa. Lo que hubiera antes queda en las copias.
+    Con varias carteras, conserva el NOMBRE de la cartera en la que restauras, para
+    no acabar con dos carteras con el mismo nombre (la copia trae su propio titular)."""
     with cerrojo:
-        almacen.guarda(os.path.join(DATOS, "cartera.json"), cfg)
+        if len(carteras()) > 1:
+            actual = cartera().get("titular")
+            if actual:
+                cfg = dict(cfg, titular=actual)
+        almacen.guarda(os.path.join(carpeta(), "cartera.json"), cfg)
         for viejo in ("calculado_propio.json", "historico.json"):
-            if os.path.exists(os.path.join(DATOS, viejo)):
-                os.remove(os.path.join(DATOS, viejo))
+            if os.path.exists(os.path.join(carpeta(), viejo)):
+                os.remove(os.path.join(carpeta(), viejo))
         recalcula(descargar="faltan")
 
 
@@ -330,7 +545,7 @@ def api_copias():
 def api_copia_descargar():
     if modo() != "propio":
         return jsonify(ok=False, errores=["Todavía no tienes una cartera propia que guardar."]), 400
-    with open(os.path.join(DATOS, "cartera.json"), "rb") as f:
+    with open(os.path.join(carpeta(), "cartera.json"), "rb") as f:
         contenido = f.read()
     nombre = f"copia_patrimonio_{dt.date.today().isoformat()}.json"
     return Response(contenido, mimetype="application/json",
@@ -366,7 +581,7 @@ def api_copia_recuperar():
     if modo() == "propio":
         # Además de la copia automática, una con nombre propio que no se borra sola.
         sello = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        with open(os.path.join(DATOS, "cartera.json"), "rb") as a, \
+        with open(os.path.join(carpeta(), "cartera.json"), "rb") as a, \
                 open(os.path.join(ruta_copias(), f"antes_de_recuperar_{sello}.json"), "wb") as b:
             b.write(a.read())
     restaura(cfg)
@@ -398,8 +613,13 @@ def version_actual():
 
 @app.get("/api/version")
 def api_version():
-    """Compara esta versión con la publicada en GitHub (se consulta como mucho una vez al día)."""
+    """Compara esta versión con la publicada en GitHub (se consulta como mucho una vez
+    al día). Solo sale a internet si lo activas en Configuración: por defecto está
+    apagado, para que la app sea 100 % local salvo la descarga de precios."""
     actual = version_actual()
+    activado = bool((cartera().get("config") or {}).get("buscarActualizaciones"))
+    if not activado:
+        return jsonify(actual=actual, ultima=None, repo=REPO, hayNueva=False, desactivado=True)
     if not _VERSION or dt.datetime.now() - _VERSION["cuando"] > dt.timedelta(hours=24):
         try:
             url = REPO.replace("github.com", "raw.githubusercontent.com") + "/main/app/VERSION"
@@ -408,7 +628,8 @@ def api_version():
         except Exception:
             _VERSION.update(ultima=None, cuando=dt.datetime.now())
     ultima = _VERSION.get("ultima")
-    como_tupla = lambda v: tuple(int(x) for x in re.findall(r"\d+", v or "0"))
+    def como_tupla(v):
+        return tuple(int(x) for x in re.findall(r"\d+", v or "0"))
     return jsonify(actual=actual, ultima=ultima, repo=REPO,
                    hayNueva=bool(ultima) and como_tupla(ultima) > como_tupla(actual))
 
@@ -420,14 +641,14 @@ def api_reiniciar():
         return jsonify(ok=False, errores=["Ahora mismo no tienes ninguna cartera propia."]), 400
     a = (request.get_json(silent=True) or {}).get("a")
     with cerrojo:
-        ruta = os.path.join(DATOS, "cartera.json")
-        copias = os.path.join(DATOS, "copias")
+        ruta = os.path.join(carpeta(), "cartera.json")
+        copias = os.path.join(carpeta(), "copias")
         os.makedirs(copias, exist_ok=True)
         sello = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         os.replace(ruta, os.path.join(copias, f"antes_de_reiniciar_{sello}.json"))
         for viejo in ("calculado_propio.json", "historico.json"):
-            if os.path.exists(os.path.join(DATOS, viejo)):
-                os.remove(os.path.join(DATOS, viejo))
+            if os.path.exists(os.path.join(carpeta(), viejo)):
+                os.remove(os.path.join(carpeta(), viejo))
         if a == "vacia":
             almacen.guarda(ruta, json.loads(json.dumps(almacen.CARTERA_VACIA)))
         recalcula(descargar="faltan")
